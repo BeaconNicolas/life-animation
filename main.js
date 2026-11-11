@@ -220,12 +220,12 @@ for (let i = 0; i < 46; i++) {
   box(scene, w, h, w, m, x, h / 2, z);
 }
 // Jacarandas — Pretoria is the Jacaranda City.
-for (let x = -60; x < 90; x += 7) {
-  if (Math.abs(x) < 6) continue;
-  const z = 9.6 + Math.sin(x) * 0.5;
+function jacaranda(x, z) {
   cyl(scene, 0.22, 2.6, 0x4a3324, x, 1.3, z, 0.14);
   for (const [dx, dy, dz, r] of [[0, 3.3, 0, 1.5], [0.9, 2.9, 0.3, 1.0], [-0.8, 3.0, -0.3, 1.1]]) ball(scene, r, 0x9b6bd6, x + dx, dy, z + dz);
 }
+for (let x = -62; x < 92; x += 6.5) jacaranda(x, -7 + Math.sin(x) * 0.8);
+for (const x of [-19, -12, 7.3, 17, 30.5, 45, 59.6, 70]) jacaranda(x, 0.8);
 const stars = (() => {
   const n = 500, pos = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) { const r = 180, a = Math.random() * PI * 2, b = 0.15 + Math.random() * 1.2; pos.set([r * Math.cos(a) * Math.cos(b), r * Math.sin(b), r * Math.sin(a) * Math.cos(b)], i * 3); }
@@ -556,6 +556,7 @@ const camPos = new THREE.Vector3(16, 13, 26), camAt = new THREE.Vector3(0, 1, 0)
 const SKY = { night: new THREE.Color(0x0a0718), day: new THREE.Color(0x8fc7ff), dusk: new THREE.Color(0xff9e6d) }, sky = new THREE.Color();
 const clock = new THREE.Clock(), tmpV = new THREE.Vector3();
 go(0);
+window.__life = { go, seek: (k) => { chT = k * chapters[idx].dur; } }; // handy for jumping around while editing
 
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1), t = clock.elapsedTime;
