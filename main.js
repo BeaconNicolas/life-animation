@@ -10,7 +10,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 // Story details that are easy to change in one place.
-const STORY = { workplace: 'the IT Hub', officeSign: 'IT Hub', birthday: { month: 11, day: 21 }, turning: 27 };
+const STORY = { workplace: 'BMW IT Hub', officeSign: 'BMW IT Hub', birthday: { month: 11, day: 21 }, turning: 27 };
 
 const $ = (s) => document.querySelector(s);
 const PI = Math.PI;
@@ -394,7 +394,7 @@ function clubScene(i, t, k, from, texts) {
 
 const chapters = [
   { day: 'Hatfield, Pretoria', from: 8.5, to: 9, dur: 10, kicker: 'This is me', title: '26, and almost 27',
-    text: `I live in a studio apartment in Hatfield, Pretoria, with my girlfriend. We are both 26. I am a platform engineer, I do not own a car, and I turn ${STORY.turning} on 21 December. This is what a week looks like.`,
+    text: `I live in a studio apartment in Hatfield, Pretoria, with my girlfriend. We are both 26. I am a platform engineer at ${STORY.workplace}, I do not own a car, and I turn ${STORY.turning} on 21 December. This is what a week looks like.`,
     run(k, t) { put(me, -0.5, 1.2, 0.45, 'wave', t); put(gf, 0.45, 1.35, 0.3, 'wave', t + 1); me.say = '👋'; return mix([16, 13, 26, 0, 1, 0], [7.5, 5.2, 9.5, -1, 1.1, -0.6], ease(clamp01(k * 1.4))); } },
 
   { day: 'A remote day', from: 9, to: 17, dur: 13, kicker: 'Weekdays · 9 to 5', title: 'Working from the apartment',
