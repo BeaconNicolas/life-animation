@@ -430,7 +430,7 @@ neon(burger, 'Burgers · 24h', '#ffd23f', 0, 4.0, 2.6, 34);
 
 /* ---- The Uber. */
 const car = new THREE.Group(); scene.add(car);
-const carPaint = M(0xf5f5f5, { roughness: 0.25, metalness: 0.3 });
+const carPaint = M(0xe6e6e6, { roughness: 0.6 });
 rbox(car, 3.7, 0.62, 1.65, carPaint, 0, 0.62, 0, 0.22); rbox(car, 2.1, 0.58, 1.5, M(0x1c2733, { roughness: 0.1, metalness: 0.5 }), -0.15, 1.15, 0, 0.24); rbox(car, 1.9, 0.06, 1.42, carPaint, -0.15, 1.44, 0, 0.03);
 for (const [x, z] of [[-1.15, 0.8], [1.15, 0.8], [-1.15, -0.8], [1.15, -0.8]]) { const w = cyl(car, 0.33, 0.24, 0x111111, x, 0.33, z); w.rotation.x = PI / 2; cyl(car, 0.16, 0.25, 0xbfbfbf, x, 0.33, z).rotation.x = PI / 2; }
 for (const z of [-0.55, 0.55]) { rbox(car, 0.08, 0.14, 0.32, lit(0xfff6cc), 1.83, 0.7, z, 0.03); rbox(car, 0.08, 0.12, 0.3, lit(0xc21f1f), -1.83, 0.72, z, 0.03); }
@@ -684,7 +684,7 @@ renderer.setAnimationLoop(() => {
   lamp.intensity = state.lampOn ? lerp(3, 26, night) : 1.2;
   shade.material.color.setHex(state.lampOn && night > 0.3 ? 0xd9b98a : 0x6b5a45);
   officeLight.intensity = lerp(18, 5, dayAmt);
-  carLight.intensity = car.visible ? night * 60 : 0;
+  carLight.intensity = car.visible ? night * 9 : 0;
 
   // Music makes the screens, soundbar and clubs move.
   const beat = Math.abs(Math.sin(t * 5.9));
