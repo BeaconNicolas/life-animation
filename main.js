@@ -155,7 +155,7 @@ function person({ skin, top, bottom = 0x23232e, shoes = 0xf4f4f4, hair = 0x14100
   if (hoodie) mesh(root, GEO.hood, mTop, 0, 1.45, -0.05).rotation.x = PI / 2 + 0.35;
   mesh(root, GEO.head, mSkin, 0, 1.68, 0);
   for (const x of [-0.225, 0.225]) mesh(root, GEO.ear, mSkin, x, 1.68, 0);
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35 });
   for (const x of [-0.085, 0.085]) { mesh(root, GEO.eye, eyeMat, x, 1.71, 0.195); mesh(root, GEO.pupil, lit(0x1a1210), x, 1.71, 0.23); }
   mesh(root, GEO.smile, lit(0x2a1a14), 0, 1.625, 0.205).rotation.z = PI;
   mesh(root, GEO.hair, mHair, 0, 1.7, -0.012).rotation.x = -0.28;
@@ -165,7 +165,7 @@ function person({ skin, top, bottom = 0x23232e, shoes = 0xf4f4f4, hair = 0x14100
   const item = (p) => { const m = mesh(p, GEO.item, M(0xffffff, { roughness: 0.3 }), 0, -0.6, 0.08); m.visible = false; return m; };
   scene.add(g);
   const a = { g, root, legL, legR, armL, armR, eyeMat, item: item(armR), itemL: item(armL), ph: (phase += 1.7), say: '', said: null };
-  a.bubble = tag(g, '', 'say', 0, 2.5, 0, 40);
+  a.bubble = tag(g, '', 'say', 0, 2.5, 0, 40); a.bubble.userData.on = false;
   return a;
 }
 
