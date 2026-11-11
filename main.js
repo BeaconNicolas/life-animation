@@ -297,12 +297,12 @@ tag(scene, 'Bottle Store', 'sign', 12, 4.1, 2.6, 34).element.style.color = '#ff9
 
 // ---- The office.
 const office = new THREE.Group(); office.position.set(-30, 0, 0); scene.add(office);
-box(office, 13, 0.2, 7, 0x9aa5b1, 0, -0.09, -0.4); box(office, 13, 3.6, 0.2, 0xe8eef3, 0, 1.8, -3.9); box(office, 0.2, 3.6, 7, 0xdde5ec, -6.5, 1.8, -0.4);
+box(office, 13, 0.2, 7, 0x9aa5b1, 0, -0.09, -0.4); box(office, 13, 3.6, 0.2, 0xb9c6d3, 0, 1.8, -3.9); box(office, 0.2, 3.6, 7, 0xa9b8c7, -6.5, 1.8, -0.4);
 for (const x of [-3.5, 0, 3.5]) box(office, 2.2, 1.3, 0.06, lit(0xcfe9ff), x, 2.2, -3.78);
 tag(office, STORY.officeSign, 'sign', 0, 4.3, -3.8, 50).element.style.color = '#8ecbff';
 const staff = [];
 [-4.2, -1.6, 1, 3.6].forEach((x, i) => {
-  box(office, 1.7, 0.07, 0.85, 0xf4f4f4, x, 0.76, -1.2); for (const dx of [-0.75, 0.75]) box(office, 0.06, 0.76, 0.75, 0x9099a2, x + dx, 0.38, -1.2);
+  box(office, 1.7, 0.07, 0.85, 0xd8c3a5, x, 0.76, -1.2); for (const dx of [-0.75, 0.75]) box(office, 0.06, 0.76, 0.75, 0x9099a2, x + dx, 0.38, -1.2);
   box(office, 0.66, 0.4, 0.05, 0x111114, x, 1.14, -0.98); box(office, 0.06, 0.2, 0.05, 0x111114, x, 0.88, -0.98);
   box(office, 0.5, 0.08, 0.5, 0x22232e, x, 0.46, -2.0); box(office, 0.5, 0.6, 0.08, 0x22232e, x, 0.78, -2.25);
   if (i === 3) return; // my desk
@@ -592,13 +592,13 @@ renderer.setAnimationLoop(() => {
   sky.copy(SKY.night).lerp(SKY.day, dayAmt).lerp(SKY.dusk, duskAmt * 0.55);
   scene.background.copy(sky); scene.fog.color.copy(sky);
   const night = 1 - dayAmt;
-  ambient.intensity = lerp(0.55, 1.7, dayAmt); ambient.color.setHex(night > 0.5 ? 0x9aa4ff : 0xffffff);
+  ambient.intensity = lerp(0.95, 1.5, dayAmt); ambient.color.setHex(night > 0.5 ? 0x9aa4ff : 0xffffff);
   sun.intensity = lerp(0.15, 2.6, dayAmt);
   stars.material.opacity = night; bloom.strength = lerp(0.3, 0.85, night);
   towerMats.forEach((m) => (m.emissiveIntensity = night * 0.9));
   windowPane.material.color.copy(sky).lerp(new THREE.Color(0xffffff), 0.25);
   lamp.intensity = state.lampOn ? lerp(3, 24, night) : 1.2;
-  officeLight.intensity = 20;
+  officeLight.intensity = lerp(18, 5, dayAmt);
   carLight.intensity = car.visible ? night * 60 : 0;
 
   // Music makes the screens, soundbar and clubs move.
