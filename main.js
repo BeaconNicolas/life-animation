@@ -281,7 +281,7 @@ box(apt, 1.8, 0.9, 0.12, 0x6b4f3a, 3.2, 0.6, 0.18);
 const zzz = floaters(apt, 3.2, 1.2, 0.7, ['💤', '💤', '💤'], { rise: 1.4, spread: 0.4, rate: 0.22 });
 const notes = floaters(apt, -4.5, 1.3, -1.5, ['🎵', '🎶', '🎵', '🎶', '🎵'], { rise: 1.8, spread: 0.8 });
 const lamp = new THREE.PointLight(0xffc98a, 0, 16); lamp.position.set(-1, 2.9, -0.5); apt.add(lamp);
-ball(apt, 0.16, lit(0xffe2b0), -1, 3.05, -0.5);
+ball(apt, 0.1, lit(0xd9b98a), -1, 3.15, -0.5);
 // Birthday cake + confetti for the finale.
 const cake = new THREE.Group(); cake.position.set(-0.4, 0, 0.9); apt.add(cake);
 cyl(cake, 0.3, 0.7, 0x5c4033, 0, 0.35, 0); cyl(cake, 0.42, 0.26, 0xfff1e6, 0, 0.84, 0); cyl(cake, 0.3, 0.2, 0xff8fab, 0, 1.07, 0);
@@ -367,7 +367,7 @@ const DOOR = [1, 2.8], CURB = [1, 4.4];
 const follow = (a, dx = 4, dy = 3.4, dz = 9) => [a.g.position.x + dx, dy, a.g.position.z + dz, a.g.position.x, 1.2, a.g.position.z - 0.5];
 const orbit = (c, t, amt = 0.35) => [c[0] + Math.sin(t * 0.25) * amt, c[1] + Math.sin(t * 0.2) * amt * 0.4, c[2] + Math.cos(t * 0.25) * amt, c[3], c[4], c[5]];
 const state = { music: false, lampOn: true, eggs: false };
-const gfHome = (t, say = '') => { put(gf, ...SOFA_GF, 'sit', t); gf.say = say; };
+const gfHome = (t, say = '') => { put(gf, -2.58, -2.0, -PI / 2, 'sit', t); gf.say = say; };
 
 function clubScene(i, t, k, from, texts) {
   const c = clubs[i], spot = [c.cx - 0.7, 1.3], spotG = [c.cx + 0.5, 1.5];
@@ -398,7 +398,7 @@ const chapters = [
 
   { day: 'A remote day', from: 9, to: 17, dur: 13, kicker: 'Weekdays · 9 to 5', title: 'Working from the apartment',
     text: 'Most days I work remotely. Two 27-inch Dell monitors, the HP ZBook for work with my own Dell beside it, and the JBL soundbar running live groove mixtapes all day: amapiano and 3-step.',
-    run(k, t) { put(me, ...DESK, 'type', t); me.say = k < 0.5 ? '💻 deploying…' : '🎧 the mix is cooking'; gfHome(t, k > 0.6 ? '📱' : ''); state.music = true; return orbit(mix([1.2, 3.4, 3.6, -3.6, 1, -1.5], [-0.9, 2.3, 1.2, -4.4, 1.05, -1.5], ease(k)), t, 0.2); } },
+    run(k, t) { put(me, ...DESK, 'type', t); me.say = k < 0.5 ? '💻 deploying…' : '🎧 the mix is cooking'; gfHome(t, k > 0.6 ? '📱' : ''); state.music = true; return orbit(mix([1.2, 3.4, 3.6, -3.6, 1, -1.5], [-1.6, 3.0, 1.3, -4.4, 1.05, -1.5], ease(k)), t, 0.2); } },
 
   { day: 'An office day', from: 8.2, to: 17, dur: 15, kicker: 'Eight days a month', title: `Uber to ${STORY.workplace}`,
     text: 'Office days mean an Uber, because I do not have a car. Some mornings my eyes are a little red from the night before, so I pick the desk furthest from my manager and keep my head down.',
@@ -434,7 +434,7 @@ const chapters = [
       cards.visible = true; state.music = true;
       const u = (t * 0.45) % 1; flyCard.position.set(-3.6 + Math.sin(u * PI) * 0.5, 0.48 + Math.sin(u * PI) * 0.35, lerp(-1.85, -1.1, Math.floor(t * 0.45) % 2 ? u : 1 - u)); flyCard.rotation.z = u * PI * 2;
       me.say = k > 0.5 ? '🃏 my hand' : ''; gf.say = k > 0.5 ? '' : '🃏 your turn';
-      return orbit(mix([-0.2, 2.9, 3.4, -3.3, 0.9, -1.5], [-4.6, 2.3, 1.6, -2.9, 0.95, -1.5], ease(k)), t, 0.2);
+      return orbit(mix([-0.2, 2.9, 3.4, -3.3, 0.9, -1.5], [-4.7, 3.1, 2.0, -2.9, 0.95, -1.5], ease(k)), t, 0.2);
     } },
 
   { day: 'Late', from: 24.8, to: 31, dur: 8, kicker: 'Lights out', title: 'Sleep, depending on tomorrow',
@@ -554,7 +554,7 @@ function toggleSound() {
 
 const camPos = new THREE.Vector3(16, 13, 26), camAt = new THREE.Vector3(0, 1, 0);
 const SKY = { night: new THREE.Color(0x0a0718), day: new THREE.Color(0x8fc7ff), dusk: new THREE.Color(0xff9e6d) }, sky = new THREE.Color();
-const clock = new THREE.Clock();
+const clock = new THREE.Clock(), tmpV = new THREE.Vector3();
 go(0);
 
 renderer.setAnimationLoop(() => {
@@ -577,8 +577,8 @@ renderer.setAnimationLoop(() => {
   camAt.lerp(new THREE.Vector3(want[3], want[4], want[5]), f);
   camera.position.copy(camPos); camera.lookAt(camAt);
 
-  for (const a of [me, gf]) if (a.say !== a.said) { a.said = a.say; a.bubble.element.textContent = a.say; a.bubble.element.style.display = a.say ? '' : 'none'; }
-  potTag.element.style.display = potTag.element.textContent ? '' : 'none';
+  for (const a of [me, gf]) { if (a.say !== a.said) { a.said = a.say; a.bubble.element.textContent = a.say; } a.bubble.userData.on = !!a.say; }
+  potTag.userData.on = !!potTag.element.textContent;
   pot.visible = !state.eggs; pan.visible = true;
   notes.on = state.music && (idx < 7 || idx === chapters.length - 1);
 
@@ -596,7 +596,7 @@ renderer.setAnimationLoop(() => {
   stars.material.opacity = night; bloom.strength = lerp(0.3, 0.85, night);
   towerMats.forEach((m) => (m.emissiveIntensity = night * 0.9));
   windowPane.material.color.copy(sky).lerp(new THREE.Color(0xffffff), 0.25);
-  lamp.intensity = state.lampOn ? lerp(4, 55, night) : 1.5;
+  lamp.intensity = state.lampOn ? lerp(3, 24, night) : 1.2;
   officeLight.intensity = 20;
   carLight.intensity = car.visible ? night * 60 : 0;
 
@@ -619,7 +619,7 @@ renderer.setAnimationLoop(() => {
   const u = (t * 0.45) % 1;
   bits.forEach((b) => { const v = (t * b.sp + b.ph) % 1; b.m.position.set(b.x + Math.sin(v * 9 + b.ph * 9) * 0.3, 4.2 - v * 4.2, b.z); b.m.rotation.set(v * 12, v * 7 + u, 0); });
   loops.forEach((e) => e.update(t));
-  for (const { o, far } of tags) o.visible = o.userData.on !== false && o.getWorldPosition(new THREE.Vector3()).distanceTo(camera.position) < far;
+  for (const { o, far } of tags) { let shown = o.userData.on !== false; for (let p = o.parent; p && shown; p = p.parent) shown = p.visible; o.visible = shown && o.getWorldPosition(tmpV).distanceTo(camera.position) < far; }
 
   composer.render();
   labels.render(scene, camera);
