@@ -59,7 +59,8 @@ addEventListener('resize', () => {
 const ambient = new THREE.AmbientLight(0xffffff, 1.6);
 const sun = new THREE.DirectionalLight(0xfff2dd, 2.4);
 sun.position.set(20, 30, 18);
-scene.add(ambient, sun);
+const fill = new THREE.PointLight(0xfff1e0, 14, 18);
+scene.add(ambient, sun, fill);
 
 /* ------------------------------------------------------------------ building blocks */
 
@@ -286,7 +287,7 @@ ball(apt, 0.1, lit(0xd9b98a), -1, 3.15, -0.5);
 const cake = new THREE.Group(); cake.position.set(-0.4, 0, 0.9); apt.add(cake);
 cyl(cake, 0.3, 0.7, 0x5c4033, 0, 0.35, 0); cyl(cake, 0.42, 0.26, 0xfff1e6, 0, 0.84, 0); cyl(cake, 0.3, 0.2, 0xff8fab, 0, 1.07, 0);
 for (let i = 0; i < 5; i++) { const a = (i / 5) * PI * 2; cyl(cake, 0.015, 0.16, 0xffffff, Math.cos(a) * 0.18, 1.25, Math.sin(a) * 0.18); ball(cake, 0.035, lit(0xffc300), Math.cos(a) * 0.18, 1.36, Math.sin(a) * 0.18); }
-const cakeTag = tag(cake, '', 'sign', 0, 2.3, 0, 40);
+const cakeTag = tag(cake, '', 'plain', 0, 2.5, 0, 40);
 const confetti = new THREE.Group(); apt.add(confetti);
 const bits = Array.from({ length: 140 }, (_, i) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(0.09, 0.14), new THREE.MeshBasicMaterial({ color: pick(TOPS, i), side: THREE.DoubleSide })); confetti.add(m); return { m, x: -4 + Math.random() * 8, z: -3 + Math.random() * 6, ph: Math.random(), sp: 0.18 + Math.random() * 0.2 }; });
 
@@ -348,7 +349,7 @@ tag(scene, 'near Arcadia St · open till 04:00', 'plain', 53, 5.9, -2.6, 30);
 tag(scene, 'closes 02:00', 'plain', 24, 5.9, -2.6, 24); tag(scene, 'closes 02:00', 'plain', 37, 5.9, -2.6, 24);
 
 // ---- Late-night burger stop.
-box(scene, 5, 3, 3.6, 0xfff3e0, 64, 1.5, 1.4); box(scene, 5.4, 0.25, 1.4, 0xd62828, 64, 2.6, 3.6); box(scene, 2.2, 1, 0.06, lit(0xfff0b3), 64, 1.7, 3.22);
+box(scene, 5, 3, 3.6, 0xb8a58c, 64, 1.5, 1.4); box(scene, 5.4, 0.25, 1.4, 0xd62828, 64, 2.6, 3.6); box(scene, 2.2, 1, 0.06, lit(0x9c7f3d), 64, 1.7, 3.22);
 box(scene, 2.6, 0.08, 0.5, 0xb0b0b0, 64, 1.15, 3.4);
 tag(scene, 'Burgers · 24h', 'sign', 64, 3.9, 2.6, 34).element.style.color = '#ffd23f';
 
@@ -577,6 +578,7 @@ renderer.setAnimationLoop(() => {
   camPos.lerp(new THREE.Vector3(want[3] + (want[0] - want[3]) * narrow, want[4] + (want[1] - want[4]) * narrow, want[5] + (want[2] - want[5]) * narrow), f);
   camAt.lerp(new THREE.Vector3(want[3], want[4], want[5]), f);
   camera.position.copy(camPos); camera.lookAt(camAt);
+  fill.position.copy(camPos).lerp(camAt, 0.35); fill.position.y += 1.2;
 
   for (const a of [me, gf]) { if (a.say !== a.said) { a.said = a.say; a.bubble.element.textContent = a.say; } a.bubble.userData.on = !!a.say; }
   potTag.userData.on = !!potTag.element.textContent;
