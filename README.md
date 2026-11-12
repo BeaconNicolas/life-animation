@@ -15,3 +15,9 @@ and a `run` function that places the characters and the camera.
 
 The characters are from the [Microsoft Rocketbox avatar library](https://github.com/microsoft/Microsoft-Rocketbox)
 (MIT licence, see `assets/ROCKETBOX-LICENSE.txt`), with its motion-captured animations converted to a compact format in `assets/`.
+
+## Map
+
+The street grid is Hatfield, Pretoria. Street names and positions come from
+[OpenStreetMap](https://www.openstreetmap.org/copyright) (© OpenStreetMap contributors, ODbL), straightened slightly.
+The apartment's position on Prospect Street is a placeholder, and the office sits off the Hatfield map.
