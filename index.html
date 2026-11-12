@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>A Week in Hatfield</title>
-  <meta name="description" content="A 3D animated week in Hatfield, Pretoria: work, wine, cards, and groove.">
+  <title>A Month in Hatfield</title>
+  <meta name="description" content="A 3D animated month in Hatfield, Pretoria: work, wine, cards, and groove.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23160d24'/%3E%3Ccircle cx='32' cy='32' r='13' fill='%23ffb347'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -27,6 +27,12 @@
     .when { flex: none; text-align: center; padding-right: 20px; border-right: 1px solid var(--line); min-width: 112px; }
     .when b { display: block; font: 800 2rem/1 Sora, sans-serif; font-variant-numeric: tabular-nums; color: var(--amber); }
     .when span { display: block; margin-top: 4px; font-size: .64rem; color: var(--dim); text-transform: uppercase; letter-spacing: .16em; }
+    .cal { display: grid; grid-template-columns: repeat(7, 9px); gap: 3px; justify-content: center; margin-top: 8px; }
+    .cal i { width: 9px; height: 9px; border-radius: 3px; background: rgba(255, 255, 255, .16); }
+    .cal i.office { background: rgba(142, 203, 255, .55); }
+    .cal i.weekend { background: rgba(255, 95, 162, .5); }
+    .cal i.past { opacity: .35; }
+    .cal i.now { background: var(--amber); opacity: 1; box-shadow: 0 0 8px var(--amber); transform: scale(1.25); }
     .story h2 { margin: 0 0 .25rem; font: 700 1.25rem/1.15 Sora, sans-serif; letter-spacing: -.01em; }
     .story p { margin: 0; font-size: .9rem; line-height: 1.5; color: #e6dbf1; min-height: 2.7em; }
     .bar { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
@@ -65,11 +71,11 @@
 <body>
   <div id="stage"></div>
 
-  <header class="hud brand">A Week in Hatfield<small>Pretoria</small></header>
+  <header class="hud brand">A Month in Hatfield<small>Pretoria</small></header>
 
   <section class="hud glass story">
     <div class="row">
-      <div class="when"><b id="clock">09:00</b><span id="day"></span></div>
+      <div class="when"><b id="clock">09:00</b><span id="day"></span><div class="cal" id="cal"></div></div>
       <div>
         <h2 id="title"></h2>
         <p id="text"></p>

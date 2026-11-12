@@ -1,4 +1,4 @@
-// A Week in Hatfield — a 3D animated routine.
+// A Month in Hatfield — a 3D animated routine.
 // The town is laid out on separate streets:
 //   Street A  – the apartment and the bottle store
 //   Street B  – Drama and Ekhaya (side by side)
@@ -147,41 +147,91 @@ const AVATARS = {
 const CLIP_FOR = { walk: 'walk', carry: 'walk', sit: 'sit', type: 'sit', sip: 'sit', lie: 'idle', dance: 'dance1', groove: 'dance2', drink: 'drink', stir: 'work', wave: 'wave', stand: 'idle' };
 const TINTS = [0xffffff, 0xffd9d9, 0xd9e8ff, 0xfff2c9, 0xd9ffe4, 0xe9d9ff, 0xcfcfcf, 0xffe0c2];
 const actors = [];
-const library = { ready: false, models: {}, clips: {} };
+const library = { ready: false, models: {}, meshes: {}, clips: {}, recolored: {} };
 const itemGeo = new THREE.CylinderGeometry(4.5, 4, 20, 14); // in centimetres, like the models
+const HIDDEN = new THREE.MeshBasicMaterial({ visible: false });
 let phase = 0;
 
-function person({ model = 'man', h = 1.75, tint = null }) {
+// A person can own several "looks" (outfits). A look is a body from one avatar, optionally with
+// the head of another grafted on (so the face stays the same) and optionally re-coloured clothes.
+function person({ model = 'man', h = 1.75, tint = null, looks = null }) {
   const g = new THREE.Group(), inner = new THREE.Group();
   g.add(inner); scene.add(g);
   const mk = () => { const m = new THREE.Mesh(itemGeo, M(0xffffff, { roughness: 0.3 })); m.visible = false; m.castShadow = true; return m; };
-  const a = { g, inner, model, h, tint, item: mk(), itemL: mk(), eyeMat: { color: { setHex() {} } }, ph: (phase += 1.7), say: '', said: null, want: 'idle', lying: false, cur: null, last: new THREE.Vector3() };
+  looks = looks || { default: { body: model } };
+  const a = { g, inner, h, tint, looks, rigs: {}, look: null, wantLook: Object.keys(looks)[0], item: mk(), itemL: mk(), eyeMat: { color: { setHex() {} } }, ph: (phase += 1.7), say: '', said: null, want: 'idle', lying: false, cur: null, last: new THREE.Vector3() };
   a.bubble = tag(g, '', 'say', 0, h + 0.5, 0, 40); a.bubble.userData.on = false;
   actors.push(a);
   if (library.ready) dress(a);
   return a;
 }
+const wear = (a, look) => { a.wantLook = look; };
 
-function dress(a) {
-  const spec = AVATARS[a.model];
-  const obj = SkeletonUtils.clone(library.models[a.model]);
-  obj.scale.setScalar(a.h / spec.height);
+// Darken clothing but leave skin and white fabric alone.
+const RECOLOR = {
+  black(r, g, b) {
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (r > g && g >= b && r - b > 22 && r - b < 120) return null;      // skin tones
+    if (mn > 150 && mx - mn < 45) return null;                           // white T-shirt
+    return [r * 0.3, g * 0.3, b * 0.36];
+  },
+};
+function recolored(bodyKey, how, map) {
+  const id = bodyKey + ':' + how;
+  if (library.recolored[id]) return library.recolored[id];
+  const img = map.image, c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  const px = ctx.getImageData(0, 0, c.width, c.height), d = px.data, fn = RECOLOR[how];
+  for (let i = 0; i < d.length; i += 4) { const out = fn(d[i], d[i + 1], d[i + 2]); if (out) { d[i] = out[0]; d[i + 1] = out[1]; d[i + 2] = out[2]; } }
+  ctx.putImageData(px, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.flipY = map.flipY;
+  return (library.recolored[id] = t);
+}
+
+function buildRig(a, spec) {
+  const src = AVATARS[spec.body];
+  const obj = SkeletonUtils.clone(library.models[spec.body]);
+  obj.scale.setScalar(a.h / src.height);
+  const graft = spec.head && spec.head !== spec.body;
+  const bones = {};
   obj.traverse((o) => {
+    if (o.isBone) bones[o.name] = o;
     if (!o.isSkinnedMesh) return;
     o.castShadow = true; o.receiveShadow = true;
-    if (a.tint) o.material = o.material.map((m) => { if (!/_body$/.test(m.name)) return m; const c = m.clone(); c.color.set(a.tint); return c; });
+    o.material = o.material.map((m) => {
+      const isBody = /_body$/.test(m.name);
+      if (graft && !isBody) return HIDDEN;
+      if (isBody && spec.recolor) { const c = m.clone(); c.map = recolored(spec.body, spec.recolor, m.map); return c; }
+      if (isBody && a.tint) { const c = m.clone(); c.color.set(a.tint); return c; }
+      return m;
+    });
   });
-  a.inner.add(obj); a.obj = obj;
-  a.mixer = new THREE.AnimationMixer(obj);
-  a.actions = {};
-  for (const [name, clip] of Object.entries(library.clips[spec.sex])) {
-    const act = a.mixer.clipAction(clip);
-    if (name !== 'walk') act.setLoop(THREE.LoopPingPong);
-    a.actions[name] = act;
+  if (graft) {
+    const hm = library.meshes[spec.head], list = hm.skeleton.bones.map((b) => bones[b.name]);
+    if (list.every(Boolean)) {
+      const head = new THREE.SkinnedMesh(hm.geometry, hm.material.map((m) => (/_body$/.test(m.name) ? HIDDEN : m)));
+      head.castShadow = true; head.frustumCulled = false;
+      obj.add(head);
+      head.bind(new THREE.Skeleton(list, hm.skeleton.boneInverses), hm.bindMatrix);
+    }
   }
-  const hr = obj.getObjectByName('Bip01_R_Hand'), hl = obj.getObjectByName('Bip01_L_Hand');
-  if (hr) { hr.add(a.item); a.item.position.set(9, -3, 0); a.item.rotation.x = PI / 2; }
-  if (hl) { hl.add(a.itemL); a.itemL.position.set(9, -3, 0); a.itemL.rotation.x = PI / 2; }
+  const mixer = new THREE.AnimationMixer(obj), actions = {};
+  for (const [name, clip] of Object.entries(library.clips[src.sex])) {
+    const act = mixer.clipAction(clip);
+    if (name !== 'walk') act.setLoop(THREE.LoopPingPong);
+    actions[name] = act;
+  }
+  obj.visible = false;
+  a.inner.add(obj);
+  return { obj, mixer, actions, hr: bones.Bip01_R_Hand, hl: bones.Bip01_L_Hand };
+}
+function dress(a) {
+  for (const [name, spec] of Object.entries(a.looks)) a.rigs[name] = buildRig(a, spec);
+  a.item.position.set(9, -3, 0); a.item.rotation.x = PI / 2;
+  a.itemL.position.set(9, -3, 0); a.itemL.rotation.x = PI / 2;
 }
 
 function pose(a, name) {
@@ -197,10 +247,18 @@ function play(a, name) {
   if (a.curAction) a.curAction.fadeOut(0.35);
   a.cur = name; a.curAction = next;
 }
-// Called every frame: start the right clip, lie people down, and advance the motion capture.
+// Called every frame: change outfit, start the right clip, lie people down, advance the motion capture.
 function animatePeople(dt, camPos) {
   for (const a of actors) {
-    if (!a.mixer) continue;
+    const rig = a.rigs[a.wantLook];
+    if (!rig) continue;
+    if (a.look !== a.wantLook) {
+      for (const [n, r] of Object.entries(a.rigs)) r.obj.visible = n === a.wantLook;
+      a.look = a.wantLook; a.mixer = rig.mixer; a.actions = rig.actions; a.cur = null; a.curAction = null;
+      rig.mixer.stopAllAction();
+      if (rig.hr) rig.hr.add(a.item);
+      if (rig.hl) rig.hl.add(a.itemL);
+    }
     play(a, a.want);
     a.inner.rotation.x = a.lying ? -PI / 2 : 0;
     a.inner.position.y = a.lying ? 0.72 : 0;
@@ -230,19 +288,23 @@ async function loadClips(sex) {
 }
 async function loadPeople() {
   const fbx = new FBXLoader(), tl = new THREE.TextureLoader();
-  const tex = (n) => { const t = tl.load('/assets/' + n); t.colorSpace = THREE.SRGBColorSpace; return t; };
+  const tex = async (n) => { const t = await tl.loadAsync('/assets/' + n); t.colorSpace = THREE.SRGBColorSpace; return t; };
   await Promise.all([
     ...Object.entries(AVATARS).map(async ([key, s]) => {
       const obj = await fbx.loadAsync(`/assets/${s.file}.fbx`);
       obj.children.filter((c) => c.isLight).forEach((c) => obj.remove(c));
+      const jobs = [];
       obj.traverse((o) => {
         if (!o.isSkinnedMesh) return;
-        o.material = [].concat(o.material).map((m) => {
+        library.meshes[key] = o;
+        const mats = [].concat(o.material);
+        jobs.push(Promise.all(mats.map(async (m) => {
           const kind = m.name.split('_').pop();
-          if (kind === 'opacity') return new THREE.MeshStandardMaterial({ name: m.name, map: tex(`${s.tex}_opacity_color.png`), transparent: true, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.9 });
-          return new THREE.MeshStandardMaterial({ name: m.name, map: tex(`${s.tex}_${kind}_color.jpg`), roughness: 0.85 });
-        });
+          if (kind === 'opacity') return new THREE.MeshStandardMaterial({ name: m.name, map: await tex(`${s.tex}_opacity_color.png`), transparent: true, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.9 });
+          return new THREE.MeshStandardMaterial({ name: m.name, map: await tex(`${s.tex}_${kind}_color.jpg`), roughness: 0.85 });
+        })).then((list) => { o.material = list; }));
       });
+      await Promise.all(jobs);
       library.models[key] = obj;
     }),
     ...['m', 'f'].map(async (sex) => { library.clips[sex] = await loadClips(sex); }),
@@ -274,46 +336,56 @@ const HELD = {
 };
 function hold(itemMesh, kind) { const [c, w, h] = HELD[kind]; itemMesh.visible = true; itemMesh.material.color.setHex(c); itemMesh.scale.set(w, h, w); }
 
-const me = person({ model: 'him', h: 1.73 });
-const gf = person({ model: 'her', h: 1.57 });
+
+// The two leads, each with outfits for different occasions.
+const me = person({ h: 1.73, looks: { home: { body: 'him' }, work: { body: 'man', head: 'him' }, out: { body: 'man', head: 'him', recolor: 'black' } } });
+const gf = person({ h: 1.57, looks: { home: { body: 'woman', head: 'her' }, out: { body: 'her' } } });
 
 /* ------------------------------------------------------------------ the town */
 
-// Where each place sits on the map: [x, z].
-const O = { apt: [0, 0], store: [12, 0], drama: [34, -50], ekhaya: [47, -50], blue: [74, -100], burger: [88, -100], office: [-40, -110] };
+// Where each place sits on the map: [x, z]. The office is a long drive away, up the main road.
+const O = { apt: [0, 0], store: [12, 0], drama: [34, -50], ekhaya: [47, -50], blue: [74, -100], burger: [88, -100], office: [50, -260] };
 const place = (key) => { const g = new THREE.Group(); g.position.set(O[key][0], 0, O[key][1]); scene.add(g); return g; };
 const W = (key, x, z) => [O[key][0] + x, O[key][1] + z];
 const nearSet = (x, z, pad) => Object.values(O).some(([sx, sz]) => Math.abs(x - sx) < pad + 5 && Math.abs(z - sz) < pad + 4);
 const camAt6 = (key, c, cut = 0) => [c[0] + O[key][0], c[1], c[2] + O[key][1], c[3] + O[key][0], c[4], c[5] + O[key][1], cut];
 
-box(scene, 520, 0.2, 420, 0x6f9463, 20, -0.1, -50).castShadow = false;
-// Streets running east–west: [z, x1, x2].  Streets running north–south: [x, z1, z2].
-const EW = [[6.6, -40, 44], [-43.4, 14, 70], [-93.4, 54, 104], [-103.4, -60, -14]];
-const NS = [[22, -45.2, 8.4], [62, -95.2, -41.6], [-22, -105.2, 8.4]];
+box(scene, 900, 0.2, 760, 0x6f9463, 20, -0.1, -130).castShadow = false;
+// Two-lane roads (South Africa drives on the left).
+const ROADW = 5.2, LANE = 1.25, MAIN_X = 100;
+// East–west streets: [z, x1, x2].  North–south streets: [x, z1, z2].
+const ST = { A: 7.4, B: -42.6, C: -92.6, D: -252.6 };
+const EW = [[ST.A, -190, 230], [ST.B, 14, 70], [ST.C, 54, MAIN_X], [ST.D, -80, 230]];
+const NS = [[22, ST.B - 2.6, ST.A - 2.6], [62, ST.C - 2.6, ST.B + 2.6], [MAIN_X, -360, 110]];
 const asphalt = M(0x2d2d36, { roughness: 0.95 }), paving = M(0xc4bcae), paint = lit(0xdedede);
+const dashX = new THREE.BoxGeometry(1.6, 0.01, 0.14), dashZ = new THREE.BoxGeometry(0.14, 0.01, 1.6);
+const poleGeo = new THREE.CylinderGeometry(0.06, 0.06, 3.6, 8), bulbGeo = new THREE.SphereGeometry(0.17, 10, 8), poleMat = M(0x3a3a44), bulbMat = lit(0xffe2a8);
 for (const [z, x1, x2] of EW) {
-  box(scene, x2 - x1, 0.04, 3.6, asphalt, (x1 + x2) / 2, 0.02, z).castShadow = false;
-  box(scene, x2 - x1, 0.1, 1.5, paving, (x1 + x2) / 2, 0.05, z - 2.6).castShadow = false;
-  for (let x = x1 + 2; x < x2; x += 4) box(scene, 1.6, 0.01, 0.14, paint, x, 0.045, z);
-  for (let x = x1 + 5; x < x2; x += 13) if (!nearSet(x, z - 6.6, 2)) { cyl(scene, 0.06, 3.6, 0x3a3a44, x, 1.8, z - 3.2); ball(scene, 0.17, lit(0xffe2a8), x, 3.7, z - 3.2); }
+  box(scene, x2 - x1, 0.04, ROADW, asphalt, (x1 + x2) / 2, 0.02, z).castShadow = false;
+  box(scene, x2 - x1, 0.1, 1.6, paving, (x1 + x2) / 2, 0.05, z - ROADW / 2 - 0.8).castShadow = false;
+  for (let x = x1 + 2; x < x2; x += 4) mesh(scene, dashX, paint, x, 0.045, z);
+  for (let x = Math.max(x1, -70) + 5; x < Math.min(x2, 130); x += 15) if (!nearSet(x, z - 7.4, 2)) { mesh(scene, poleGeo, poleMat, x, 1.8, z - ROADW / 2 - 1.5); mesh(scene, bulbGeo, bulbMat, x, 3.7, z - ROADW / 2 - 1.5); }
 }
 for (const [x, z1, z2] of NS) {
-  box(scene, 3.6, 0.04, z2 - z1, asphalt, x, 0.021, (z1 + z2) / 2).castShadow = false;
-  for (let z = z1 + 4; z < z2 - 2; z += 4) box(scene, 0.14, 0.01, 1.6, paint, x, 0.046, z);
+  box(scene, ROADW, 0.04, z2 - z1, asphalt, x, 0.021, (z1 + z2) / 2).castShadow = false;
+  for (let z = z1 + 4; z < z2 - 2; z += 4) mesh(scene, dashZ, paint, x, 0.046, z);
 }
 
+const trunkGeo = new THREE.CylinderGeometry(0.13, 0.2, 2.6, 8), trunkMat = M(0x4a3324);
+const BLOBS = [[0, 3.4, 0, 1.4, 0x9b6bd6], [0.95, 3.0, 0.3, 1.0, 0xa77be0], [-0.85, 3.1, -0.3, 1.05, 0x8f5fcb], [0.2, 3.9, -0.5, 0.9, 0xb48cf0], [-0.2, 2.9, 0.7, 0.85, 0x9b6bd6]]
+  .map(([dx, dy, dz, r, c]) => ({ dx, dy, dz, geo: new THREE.IcosahedronGeometry(r, 2), mat: M(c, { roughness: 1 }) }));
 function jacaranda(x, z, s = 1) {
-  cyl(scene, 0.2 * s, 2.6 * s, 0x4a3324, x, 1.3 * s, z, 0.13 * s);
-  for (const [dx, dy, dz, r, c] of [[0, 3.4, 0, 1.4, 0x9b6bd6], [0.95, 3.0, 0.3, 1.0, 0xa77be0], [-0.85, 3.1, -0.3, 1.05, 0x8f5fcb], [0.2, 3.9, -0.5, 0.9, 0xb48cf0], [-0.2, 2.9, 0.7, 0.85, 0x9b6bd6]]) {
-    mesh(scene, new THREE.IcosahedronGeometry(r * s, 2), M(c, { roughness: 1 }), x + dx * s, dy * s, z + dz * s);
-  }
+  mesh(scene, trunkGeo, trunkMat, x, 1.3 * s, z).scale.setScalar(s);
+  for (const b of BLOBS) mesh(scene, b.geo, b.mat, x + b.dx * s, b.dy * s, z + b.dz * s).scale.setScalar(s);
 }
-
-for (const [z, x1, x2] of EW) for (let x = x1 + 3; x < x2; x += 6.5) {
-  if (!nearSet(x, z - 6.6, 1) && !NS.some(([nx]) => Math.abs(nx - x) < 4)) jacaranda(x, z - 5.2 + Math.sin(x) * 0.6);
-  if (!NS.some(([nx]) => Math.abs(nx - x) < 4)) jacaranda(x + 2, z - 13.5 + Math.cos(x) * 0.8, 1.15);
+const nearCross = (x) => NS.some(([nx]) => Math.abs(nx - x) < 5);
+for (const [z, x1, x2] of EW) for (let x = Math.max(x1, -80) + 3; x < Math.min(x2, 135); x += 7.5) {
+  if (nearCross(x)) continue;
+  if (!nearSet(x, z - 7.4, 1)) jacaranda(x, z - 6 + Math.sin(x) * 0.6);
+  jacaranda(x + 2, z - 14.5 + Math.cos(x) * 0.8, 1.15);
 }
-for (const [x, z1, z2] of NS) for (let z = z1 + 9; z < z2 - 12; z += 7) jacaranda(x - 5, z + Math.sin(z) * 0.7);
+for (let z = -340; z < 90; z += 11) if (!EW.some(([ez]) => Math.abs(ez - z) < 12)) { jacaranda(MAIN_X - 20, z + Math.sin(z) * 0.8); jacaranda(MAIN_X + 20, z + 5 + Math.cos(z) * 0.8); }
+for (const [x, z1, z2] of NS.slice(0, 2)) for (let z = z1 + 9; z < z2 - 12; z += 7) jacaranda(x - 6, z + Math.sin(z) * 0.7);
 
 // Background buildings with lit windows, kept clear of streets, sets and camera paths.
 const winCanvas = document.createElement('canvas'); winCanvas.width = 64; winCanvas.height = 128;
@@ -322,16 +394,15 @@ const winCanvas = document.createElement('canvas'); winCanvas.width = 64; winCan
 const winTex = new THREE.CanvasTexture(winCanvas);
 const towerMats = [0x8d8799, 0xa0969f, 0xb3a79a, 0x77839a, 0x9c8f8f].map((c) => M(c, { emissive: 0xffffff, emissiveMap: winTex, emissiveIntensity: 0 }));
 function clear(x, z, w) {
-  for (const [rz, x1, x2] of EW) if (x > x1 - 10 && x < x2 + 10 && z > rz - 5 - w / 2 && z < rz + 21 + w / 2) return false;
-  for (const [rx, z1, z2] of NS) if (z > z1 - 8 && z < z2 + 22 && Math.abs(x - rx) < 14 + w / 2) return false;
+  for (const [rz, x1, x2] of EW) if (x > x1 - 10 && x < x2 + 10 && z > rz - 6 - w / 2 && z < rz + 23 + w / 2) return false;
+  for (const [rx, z1, z2] of NS) if (z > z1 - 8 && z < z2 + 24 && Math.abs(x - rx) < 16 + w / 2) return false;
   return !nearSet(x, z, 5 + w / 2);
 }
-for (let i = 0, made = 0; i < 900 && made < 110; i++) {
-  const w = 6 + Math.random() * 6, h = 7 + Math.random() * 20, x = -95 + Math.random() * 225, z = -150 + Math.random() * 185;
+for (let i = 0, made = 0; i < 4000 && made < 230; i++) {
+  const w = 6 + Math.random() * 6, h = 7 + Math.random() * 20, x = -200 + Math.random() * 440, z = -380 + Math.random() * 480;
   if (!clear(x, z, w)) continue;
   made++;
   rbox(scene, w, h, w, pick(towerMats, i), x, h / 2, z, 0.25);
-  box(scene, w * 0.5, 0.6, w * 0.5, 0x5b5866, x, h + 0.3, z);
 }
 const stars = (() => {
   const n = 500, pos = new Float32Array(n * 3);
@@ -433,7 +504,7 @@ const staff = [];
   rbox(office, 0.68, 0.42, 0.045, black, x, 1.16, -0.98, 0.02); cyl(office, 0.025, 0.2, black, x, 0.9, -0.98); cyl(office, 0.13, 0.02, black, x, 0.805, -0.98);
   rbox(office, 0.52, 0.1, 0.52, 0x2a2b36, x, 0.47, -2.0, 0.05); rbox(office, 0.5, 0.62, 0.1, 0x2a2b36, x, 0.82, -2.26, 0.05); cyl(office, 0.035, 0.4, 0x777777, x, 0.22, -2.0);
   if (i === 3) return; // the empty desk at the far end
-  const p = i === 0 ? person({ model: 'manager', h: 1.68 }) : person({ model: i === 1 ? 'woman' : 'man', h: 1.72, tint: pick(TINTS, i + 2) });
+  const p = i === 0 ? person({ model: 'manager', h: 1.68 }) : person({ model: i === 1 ? 'woman' : 'man', h: 1.72, tint: i === 1 ? 0xd9e8ff : 0xa89a80 });
   p.g.position.set(O.office[0] + x, 0, O.office[1] - 2.0);
   staff.push(p);
 });
@@ -487,12 +558,70 @@ box(burger, 2.4, 1.0, 0.06, lit(0xa88a45), 0, 1.7, 3.31); rbox(burger, 2.8, 0.08
 rbox(burger, 1.0, 0.7, 0.06, lit(0x7a6a3a), 1.9, 1.9, 3.31, 0.02);
 neon(burger, 'Burgers · 24h', '#ffd23f', 0, 4.0, 2.6, 34);
 
-/* ---- The Uber. */
-const car = new THREE.Group(); scene.add(car);
-const carPaint = M(0xe6e6e6, { roughness: 0.6 });
-rbox(car, 3.7, 0.62, 1.65, carPaint, 0, 0.62, 0, 0.22); rbox(car, 2.1, 0.58, 1.5, M(0x1c2733, { roughness: 0.1, metalness: 0.5 }), -0.15, 1.15, 0, 0.24); rbox(car, 1.9, 0.06, 1.42, carPaint, -0.15, 1.44, 0, 0.03);
-for (const [x, z] of [[-1.15, 0.8], [1.15, 0.8], [-1.15, -0.8], [1.15, -0.8]]) { const w = cyl(car, 0.33, 0.24, 0x111111, x, 0.33, z); w.rotation.x = PI / 2; cyl(car, 0.16, 0.25, 0xbfbfbf, x, 0.33, z).rotation.x = PI / 2; }
-for (const z of [-0.55, 0.55]) { rbox(car, 0.08, 0.14, 0.32, lit(0xfff6cc), 1.83, 0.7, z, 0.03); rbox(car, 0.08, 0.12, 0.3, lit(0xc21f1f), -1.83, 0.72, z, 0.03); }
+/* ------------------------------------------------------------------ traffic */
+
+const carGeo = {
+  body: new RoundedBoxGeometry(3.7, 0.62, 1.65, 3, 0.22), cabin: new RoundedBoxGeometry(2.1, 0.58, 1.5, 3, 0.24), roof: new RoundedBoxGeometry(1.9, 0.06, 1.42, 2, 0.03),
+  wheel: new THREE.CylinderGeometry(0.33, 0.33, 0.24, 18), hub: new THREE.CylinderGeometry(0.16, 0.16, 0.25, 12),
+  lamp: new RoundedBoxGeometry(0.08, 0.14, 0.32, 2, 0.03),
+};
+const glass = M(0x1c2733, { roughness: 0.1, metalness: 0.5 }), tyre = M(0x111111), hubMat = M(0xbfbfbf), headMat = lit(0xfff6cc), tailMat = lit(0xc21f1f);
+function makeCar(color) {
+  const g = new THREE.Group(), paintMat = M(color, { roughness: 0.6 });
+  mesh(g, carGeo.body, paintMat, 0, 0.62, 0); mesh(g, carGeo.cabin, glass, -0.15, 1.15, 0); mesh(g, carGeo.roof, paintMat, -0.15, 1.44, 0);
+  for (const [x, z] of [[-1.15, 0.8], [1.15, 0.8], [-1.15, -0.8], [1.15, -0.8]]) { mesh(g, carGeo.wheel, tyre, x, 0.33, z).rotation.x = PI / 2; mesh(g, carGeo.hub, hubMat, x, 0.33, z).rotation.x = PI / 2; }
+  for (const z of [-0.55, 0.55]) { mesh(g, carGeo.lamp, headMat, 1.83, 0.7, z); mesh(g, carGeo.lamp, tailMat, -1.83, 0.72, z); }
+  scene.add(g);
+  return g; // faces +x
+}
+
+// ---- Traffic lights ("robots") at the three junctions on the main road.
+const lampGeo = new THREE.SphereGeometry(0.15, 12, 10), mastGeo = new THREE.CylinderGeometry(0.07, 0.07, 4.2, 8), headGeo = new RoundedBoxGeometry(0.42, 1.25, 0.42, 2, 0.08);
+const LAMP = { r: [0xff3b30, 0x4a1512], a: [0xffb020, 0x4a3410], g: [0x34e36a, 0x0f3d1e] };
+const junctions = [];
+function junction(x, z, offset) {
+  const J = { x, z, offset, force: null, lamps: { x: [], z: [] } };
+  const mast = (px, pz, axis) => {
+    mesh(scene, mastGeo, poleMat, px, 2.1, pz); mesh(scene, headGeo, M(0x1d1d22), px, 4.5, pz);
+    const set = {};
+    ['r', 'a', 'g'].forEach((c, i) => {
+      const m = new THREE.MeshBasicMaterial({ color: LAMP[c][1] });
+      for (const s of [-1, 1]) mesh(scene, lampGeo, m, px + (axis === 'x' ? s * 0.2 : 0), 4.9 - i * 0.4, pz + (axis === 'z' ? s * 0.2 : 0));
+      set[c] = m;
+    });
+    J.lamps[axis].push(set);
+  };
+  const d = ROADW / 2 + 0.9;
+  mast(x - d, z - d, 'x'); mast(x + d, z + d, 'x'); mast(x + d, z - d, 'z'); mast(x - d, z + d, 'z');
+  // stop lines
+  box(scene, 0.25, 0.012, ROADW / 2, paint, x - d + 0.4, 0.05, z - LANE).castShadow = false; box(scene, 0.25, 0.012, ROADW / 2, paint, x + d - 0.4, 0.05, z + LANE).castShadow = false;
+  box(scene, ROADW / 2, 0.012, 0.25, paint, x + LANE, 0.05, z - d + 0.4).castShadow = false; box(scene, ROADW / 2, 0.012, 0.25, paint, x - LANE, 0.05, z + d - 0.4).castShadow = false;
+  junctions.push(J); return J;
+}
+const J1 = junction(MAIN_X, ST.A, 0), J2 = junction(MAIN_X, ST.D, 5), J3 = junction(MAIN_X, ST.C, 9);
+// Signal for traffic travelling along `axis` ('x' = east–west, 'z' = north–south).
+function signal(J, axis, t) {
+  if (J.force) return J.force === axis ? 'g' : 'r';
+  const u = (t + J.offset) % 15;
+  const ew = u < 6 ? 'g' : u < 7.5 ? 'a' : 'r', ns = u < 7.5 ? 'r' : u < 13.5 ? 'g' : 'a';
+  return axis === 'x' ? ew : ns;
+}
+
+// ---- Other cars. Each lane runs from a to b; cars keep left, stop at red and keep their distance.
+const LANES = {
+  Aw: { axis: 'x', c: ST.A + LANE, a: 230, b: -190, n: 10 }, Ae: { axis: 'x', c: ST.A - LANE, a: -190, b: 230, n: 9 },
+  Ms: { axis: 'z', c: MAIN_X + LANE, a: -360, b: 110, n: 17 }, Mn: { axis: 'z', c: MAIN_X - LANE, a: 110, b: -360, n: 17 },
+  De: { axis: 'x', c: ST.D - LANE, a: -80, b: 230, n: 7 }, Dw: { axis: 'x', c: ST.D + LANE, a: 230, b: -80, n: 7 },
+};
+const CAR_COLORS = [0xc0392b, 0x2e86de, 0xf5f5f5, 0x222831, 0xf39c12, 0x7f8c8d, 0x16a085, 0x8e44ad, 0xd4d4d4, 0x34495e];
+const traffic = [];
+Object.entries(LANES).forEach(([key, L], li) => {
+  L.len = Math.abs(L.b - L.a); L.dir = Math.sign(L.b - L.a);
+  for (let i = 0; i < L.n; i++) traffic.push({ key, L, s: ((i + Math.random() * 0.6) / L.n) * L.len, v: 8, vmax: 8 + Math.random() * 3, mesh: makeCar(pick(CAR_COLORS, i * 3 + li * 7)), sparse: i % 3 !== 0 });
+});
+
+// ---- The Uber: scripted by the chapters, but the other cars treat it like any other car.
+const car = makeCar(0xe6e6e6);
 const carLight = new THREE.PointLight(0xfff0c0, 0, 12); carLight.position.set(3, 0.8, 0); car.add(carLight);
 tag(car, 'Uber', 'plain', 0, 2.2, 0, 40);
 let carRot = 0;
@@ -504,16 +633,55 @@ function drive(path, k) {
   return p;
 }
 
+function updateTraffic(dt, t, lateNight, reserved, jumped) {
+  for (const J of junctions) for (const axis of ['x', 'z']) {
+    const s = signal(J, axis, t);
+    for (const set of J.lamps[axis]) for (const c of ['r', 'a', 'g']) set[c].color.setHex(LAMP[c][c === s ? 0 : 1]);
+  }
+  for (const c of traffic) {
+    const L = c.L, hidden = reserved.includes(c.key) || (lateNight && c.sparse);
+    c.mesh.visible = !hidden;
+    if (hidden) { c.s = (c.s + c.vmax * dt) % L.len; continue; }
+    const p = L.a + L.dir * c.s;
+    let gap = Infinity;
+    for (const J of junctions) {
+      if (Math.abs((L.axis === 'x' ? J.z : J.x) - L.c) > 3) continue;
+      const stop = (L.axis === 'x' ? J.x : J.z) - L.dir * (ROADW / 2 + 2.6);
+      const d = (stop - p) * L.dir;
+      if (d > -0.6 && d < gap && signal(J, L.axis, t) !== 'g') gap = d;
+    }
+    for (const o of traffic) {
+      if (o === c || o.key !== c.key || !o.mesh.visible) continue;
+      const d = ((o.s - c.s + L.len) % L.len) - 5;
+      if (d < gap) gap = d;
+    }
+    if (car.visible && Math.abs((L.axis === 'x' ? car.position.z : car.position.x) - L.c) < 0.7) {
+      const along1 = ((L.axis === 'x' ? car.position.x : car.position.z) - p) * L.dir;
+      if (jumped && Math.abs(along1) < 10) { c.s = (c.s + 30) % L.len; continue; }
+      if (along1 > 0 && along1 - 5 < gap) gap = along1 - 5;
+    }
+    const want = gap < 0.8 ? 0 : Math.min(c.vmax, gap * 1.3);
+    c.v += THREE.MathUtils.clamp(want - c.v, -16 * dt, 5 * dt);
+    c.s = (c.s + Math.max(0, c.v) * dt) % L.len;
+    const q = L.a + L.dir * c.s;
+    if (L.axis === 'x') { c.mesh.position.set(q, 0, L.c); c.mesh.rotation.y = L.dir > 0 ? 0 : PI; }
+    else { c.mesh.position.set(L.c, 0, q); c.mesh.rotation.y = L.dir > 0 ? -PI / 2 : PI / 2; }
+  }
+}
+
 /* ------------------------------------------------------------------ chapters */
 
 const DESK = [-3.78, -1.5, -PI / 2], SOFA_ME = [-2.6, -1.98, -PI / 2], SOFA_GF = [-2.6, -1.02, -PI / 2];
 const DOOR = [1, 2.8], CURB = [1, 4.1];
+const easeOut = (k) => 1 - Math.pow(1 - clamp01(k), 2.4), easeIn = (k) => Math.pow(clamp01(k), 2.2);
 const follow = (a, cut = 0, dx = 4, dy = 3.4, dz = 9.5) => [a.g.position.x + dx, dy, a.g.position.z + dz, a.g.position.x, 1.2, a.g.position.z - 0.5, cut];
 const chase = (p, cut = 0) => [p.x + 9, 6, p.z + 16, p.x - 1, 0.8, p.z - 1, cut];
+const beside = (p, cut = 0, side = -1) => [p.x + side * 11, 4.2, p.z + 7, p.x + 1, 1, p.z - 4, cut];
 const orbit = (c, t, amt = 0.35) => [c[0] + Math.sin(t * 0.25) * amt, c[1] + Math.sin(t * 0.2) * amt * 0.4, c[2] + Math.cos(t * 0.25) * amt, c[3], c[4], c[5], c[6] || 0];
-const state = { music: false, lampOn: true, eggs: false };
+const state = { music: false, lampOn: true, eggs: false, reserved: [] };
 const gfHome = (t, say = '') => { put(gf, ...SOFA_ME, 'sit', t); gf.say = say; };
 const inBed = () => { me.g.position.set(2.82, 0, 2.3); me.g.rotation.y = 0; pose(me, 'lie'); gf.g.position.set(3.6, 0, 2.25); gf.g.rotation.y = 0; pose(gf, 'lie'); };
+const goingOut = () => { wear(me, 'out'); wear(gf, 'out'); };
 
 function onTheFloor(c, t, drinks, hubbly) {
   state.music = true;
@@ -529,30 +697,78 @@ function onTheFloor(c, t, drinks, hubbly) {
 }
 function stroll(path, k, t, cut) { walk(me, path, k, t); walk(gf, shift(path, 0.9, 0.25), k, t); return follow(me, cut, 3.5, 3.3, 10); }
 
-const TO_WORK = [[2, 6.6], [-22, 6.6], [-22, -103.4], [-38.5, -103.4]];
-const TO_HOME = [[86, -93.4], [62, -93.4], [62, -43.4], [22, -43.4], [22, 6.6], [3, 6.6]];
+// A ride: wait at the kerb while the minutes tick down, get in, then drive in three legs.
+// `legs` = { arrive, first (with a stop at a red light), middle, last }.
+function ride(k, t, o) {
+  state.reserved = o.reserved;
+  const riders = o.riders, waitEnd = 0.3, boardEnd = 0.36;
+  if (k < boardEnd) {
+    o.waitLight.force = o.waitAxis;
+    const kk = k / waitEnd;
+    riders.forEach((a, i) => put(a, o.spot[0] + i * 1.1, o.spot[1], 0, 'stand', t));
+    const mins = Math.max(1, Math.ceil(o.mins * (1 - kk / 0.72)));
+    riders[0].say = kk < 0.72 ? `🚕 Uber · ${mins} min` : kk < 1 ? '🚕 arriving' : '';
+    if (kk > 0.72) drive(o.arrive, easeOut((kk - 0.72) / 0.28));
+    if (k > waitEnd) {
+      const b = (k - waitEnd) / (boardEnd - waitEnd), door = o.arrive[o.arrive.length - 1];
+      riders.forEach((a, i) => { walk(a, [[o.spot[0] + i * 1.1, o.spot[1]], [door[0] - 0.4 + i * 0.9, door[1] - 1.0]], b, t); if (b > 0.85) a.g.visible = false; });
+    }
+    return orbit([o.spot[0] + 7, 3.2, o.spot[1] + 9, o.spot[0] - 1, 1.2, o.spot[1] + 1.5, 0], t, 0.3);
+  }
+  riders.forEach((a) => { a.g.visible = false; });
+  if (k < 0.64) {
+    // First leg: up to the robot, wait for green, then turn onto the next road.
+    const kk = (k - boardEnd) / (0.64 - boardEnd);
+    o.light.force = kk < 0.66 ? o.crossAxis : o.myAxis;
+    const f = kk < 0.42 ? easeOut(kk / 0.42) * o.stopAt : kk < 0.7 ? o.stopAt : o.stopAt + easeIn((kk - 0.7) / 0.3) * (1 - o.stopAt);
+    return chase(drive(o.first, f), 1);
+  }
+  if (k < 0.83) return beside(drive(o.middle, (k - 0.64) / 0.19), 2, o.side);
+  o.lastLight.force = o.lastAxis;
+  return chase(drive(o.last, easeOut((k - 0.83) / 0.17)), 3);
+}
+// Fraction of the way along `path` at which the car has travelled `dist`.
+const fracAt = (path, dist) => { let total = 0; for (let i = 0; i < path.length - 1; i++) total += Math.hypot(path[i + 1][0] - path[i][0], path[i + 1][1] - path[i][1]); return dist / total; };
 
+const eLane = ST.A - LANE, wLane = ST.A + LANE, nLane = MAIN_X - LANE, sLane = MAIN_X + LANE, dE = ST.D - LANE, dW = ST.D + LANE, cE = ST.C - LANE;
+const stopBefore = ROADW / 2 + 2.6;
+const TO_WORK = {
+  reserved: ['Ae', 'Mn', 'Dw'], riders: [me], spot: [2, 4.3], mins: 4, waitLight: J1, waitAxis: 'z',
+  arrive: [[-50, eLane], [2.5, eLane]],
+  first: [[2.5, eLane], [nLane, eLane], [nLane, -50]], light: J1, myAxis: 'x', crossAxis: 'z',
+  middle: [[nLane, -105], [nLane, -205]], side: -1,
+  last: [[nLane, -222], [nLane, dW], [56, dW]], lastLight: J2, lastAxis: 'z',
+};
+TO_WORK.stopAt = fracAt(TO_WORK.first, MAIN_X - stopBefore - 2.5);
+const TO_HOME = {
+  reserved: ['De', 'Ms', 'Aw'], riders: [me], spot: W('office', 2, 4.3), mins: 6, waitLight: J2, waitAxis: 'z',
+  arrive: [[0, dE], [52.5, dE]],
+  first: [[52.5, dE], [sLane, dE], [sLane, -210]], light: J2, myAxis: 'x', crossAxis: 'z',
+  middle: [[sLane, -195], [sLane, -100]], side: 1,
+  last: [[sLane, -28], [sLane, wLane], [3, wLane]], lastLight: J1, lastAxis: 'z',
+};
+TO_HOME.stopAt = fracAt(TO_HOME.first, MAIN_X - stopBefore - 52.5);
+const NIGHT_HOME = {
+  reserved: ['Ms', 'Aw'], riders: [me, gf], spot: W('burger', -0.8, 4.3), mins: 2, waitLight: J3, waitAxis: 'z',
+  arrive: [[58, cE], [87.5, cE]],
+  first: [[87.5, cE], [sLane, cE], [sLane, -55]], light: J3, myAxis: 'x', crossAxis: 'z',
+  middle: [[sLane, -50], [sLane, -18]], side: 1,
+  last: [[sLane, -16], [sLane, wLane], [3, wLane]], lastLight: J1, lastAxis: 'z',
+};
+NIGHT_HOME.stopAt = fracAt(NIGHT_HOME.first, MAIN_X - stopBefore - 87.5);
+
+// `date` is the day of the month (1 = the first Monday). Tuesdays and Thursdays are office days: eight a month.
 const chapters = [
-  { day: 'Hatfield', from: 8.5, to: 9, dur: 9, title: 'Hatfield, Pretoria',
-    text: 'A studio apartment, a couple in their twenties, and a week with a rhythm of its own.',
-    run(k, t) { put(me, -0.5, 1.2, 0.45, 'wave', t); put(gf, 0.45, 1.35, 0.3, 'wave', t + 1); return mix([17, 14, 27, 0, 1, 0, 0], [7.5, 5.2, 9.5, -1, 1.1, -0.6, 0], ease(clamp01(k * 1.4))); } },
+  { date: 1, from: 8.5, to: 9, dur: 9, title: 'Hatfield, Pretoria',
+    text: 'A studio apartment, a couple in their twenties, and a month with a rhythm of its own.',
+    run(k, t) { put(me, -0.5, 1.2, 0.45, 'wave', t); put(gf, 0.45, 1.35, 0.3, 'wave', t + 1); return mix([17, 14, 27, 0, 1, 0, 0], [5.5, 3.6, 7.5, -0.5, 1.1, 0.2, 0], ease(clamp01(k * 1.4))); } },
 
-  { day: 'Remote day', from: 9, to: 17, dur: 13, title: 'Nine to five, from the apartment',
-    text: 'Two 27-inch Dell monitors, an HP ZBook for work beside a personal Dell, and a JBL soundbar playing live amapiano and 3-step mixes all day.',
+  { date: 1, from: 9, to: 17, dur: 13, title: 'A remote day',
+    text: 'Most of the month is spent working from the apartment: two 27-inch Dell monitors, an HP ZBook for work beside a personal Dell, and a JBL soundbar playing live amapiano and 3-step mixes.',
     run(k, t) { put(me, ...DESK, 'type', t); me.say = k < 0.5 ? '💻' : '🎧'; gfHome(t, k > 0.6 ? '📱' : ''); state.music = true; return orbit(mix([1.2, 3.4, 3.6, -3.6, 1, -1.5], [-1.6, 3.0, 1.3, -4.4, 1.05, -1.5], ease(k)), t, 0.2); } },
 
-  { day: 'Office day', from: 8.2, to: 17, dur: 16, title: `Across town to ${STORY.workplace}`,
-    text: 'Eight days a month it is an Uber to the office, on a different side of town. After a late night, red eyes pick the desk furthest from the manager.',
-    run(k, t) {
-      gfHome(t);
-      if (k < 0.42) { me.g.visible = false; return chase(drive(TO_WORK, ease(k / 0.42)), 0); }
-      put(me, ...W('office', 3.6, -2.0), 0, 'type', t); me.eyeMat.color.setHex(0xff5a5a);
-      me.say = k < 0.7 ? '🥴' : '👀';
-      return k < 0.7 ? orbit(camAt6('office', [1.5, 4.2, 7.5, -0.2, 1.1, -1.6], 1), t) : orbit(camAt6('office', [5.0, 2.2, 1.6, 3.4, 1.25, -1.9], 2), t, 0.15);
-    } },
-
-  { day: 'Every evening', from: 17.5, to: 18.4, dur: 12, title: 'The wine run',
-    text: 'A walk down the street to the bottle store for two bottles of Robertson: a sweet red for her, a dry white for him.',
+  { date: 1, from: 17.5, to: 18.4, dur: 15, title: 'The wine run',
+    text: 'Every evening, a walk down the street to the bottle store for two bottles of Robertson: a sweet red for her, a dry white for him.',
     run(k, t) {
       gfHome(t);
       const path = [DOOR, CURB, [12, 4.1], [12, 3.75]];
@@ -562,11 +778,11 @@ const chapters = [
       return follow(me, 0, 3.5, 3.2, 9.5);
     } },
 
-  { day: 'Every evening', from: 19, to: 20.5, dur: 11, title: '7pm: cooking',
+  { date: 1, from: 19, to: 20.5, dur: 11, title: '7pm: cooking',
     text: 'Pap and chicken, rice and chicken, wors, or beef. It depends on the day.',
     run(k, t) { put(me, 1.55, -2.42, PI, 'stir', t); put(gf, 0.6, -2.42, PI, 'stir', t + 1); steam.on = true; potTag.element.textContent = ['🍗 pap & chicken', '🍚 rice & chicken', '🌭 wors', '🥩 beef'][Math.min(3, Math.floor(k * 4))]; return orbit([3.9, 3.0, 1.2, 1.0, 1.15, -3], t, 0.3); } },
 
-  { day: 'Every evening', from: 21, to: 24.6, dur: 14, title: 'Wine, cards and the mix',
+  { date: 1, from: 21, to: 24.6, dur: 14, title: 'Wine, cards and the mix',
     text: 'After dinner: the couch, the wine, a deck of cards, and the groove mix on the monitors until midnight or 1am.',
     run(k, t) {
       chair.position.set(-4.0, 0, -3.05);
@@ -579,56 +795,96 @@ const chapters = [
       return orbit(mix([-0.2, 2.9, 3.4, -3.3, 0.9, -1.5], [-4.7, 3.1, 2.0, -2.9, 0.95, -1.5], ease(k)), t, 0.2);
     } },
 
-  { day: 'Late', from: 24.8, to: 31, dur: 8, title: 'Lights out',
+  { date: 1, from: 24.8, to: 31, dur: 8, title: 'Lights out',
     text: 'Bedtime depends on whether tomorrow is an office day.',
     run(k, t) { state.lampOn = false; chair.position.set(-4.0, 0, -3.05); inBed(); zzz.on = true; return orbit([7.2, 3.8, 6, 3.2, 0.6, 1.2], t, 0.3); } },
 
-  { day: 'Saturday night', from: 21.5, to: 23.75, dur: 16, title: 'Groove: Drama',
-    text: 'Weekends mean groove, and it is close enough to walk: out of their street and over to the next. First stop, Drama. Stella Artois draught for him; Bernini, Extreme or Flying Fish for her.',
+  { date: 2, from: 7.4, to: 8.4, dur: 36, title: 'Office day: waiting for the Uber',
+    text: 'Eight days a month are office days. No car, so it starts at the kerb, waiting for an Uber, then a long ride up the main road through the morning traffic and the robots.',
+    run(k, t) { wear(me, 'work'); put(gf, ...SOFA_GF, 'sit', t); return ride(k, t, TO_WORK); } },
+
+  { date: 2, from: 8.5, to: 17, dur: 13, title: `At ${STORY.workplace}`,
+    text: 'Platform engineering, nine to five. After a late night, red eyes pick the desk furthest from the manager.',
     run(k, t) {
-      if (k < 0.13) return stroll([DOOR, CURB, [15, 4.1]], k / 0.13, t, 0);
-      if (k < 0.3) return stroll([W('drama', -9, 4.3), W('drama', -0.7, 4.3), W('drama', -0.7, 1.3)], (k - 0.13) / 0.17, t, 1);
+      wear(me, 'work'); gfHome(t);
+      put(me, ...W('office', 3.6, -2.0), 0, 'type', t);
+      me.say = k < 0.55 ? '🥴' : '👀';
+      return k < 0.55 ? orbit(camAt6('office', [1.5, 4.2, 7.5, -0.2, 1.1, -1.6], 1), t) : orbit(camAt6('office', [5.0, 2.2, 1.6, 3.4, 1.25, -1.9], 2), t, 0.15);
+    } },
+
+  { date: 2, from: 17.05, to: 18.1, dur: 32, title: 'The ride home',
+    text: 'Five o\'clock: back to the kerb, another wait, and the same road home in the evening traffic.',
+    run(k, t) { wear(me, 'work'); gfHome(t); return ride(k, t, TO_HOME); } },
+
+  { date: 13, from: 21.5, to: 23.75, dur: 18, title: 'Saturday night: Drama',
+    text: 'Weekends mean groove, dressed for it, and it is close enough to walk: out of their street and over to the next. First stop, Drama. Stella Artois draught for him; Bernini, Extreme or Flying Fish for her.',
+    run(k, t) {
+      goingOut();
+      if (k < 0.18) return stroll([DOOR, CURB, [7, 4.1]], k / 0.18, t, 0);
+      if (k < 0.38) return stroll([W('drama', -6, 4.3), W('drama', -0.7, 4.3), W('drama', -0.7, 1.3)], (k - 0.18) / 0.2, t, 1);
       return onTheFloor(clubs[0], t, ['🍺 Stella draught', '🍾 Bernini']);
     } },
 
-  { day: 'Saturday night', from: 23.75, to: 26, dur: 14, title: 'Ekhaya, a few doors down',
+  { date: 13, from: 23.75, to: 26, dur: 18, title: 'Ekhaya, a few doors down',
     text: 'Same street, next venue. Hubbly on the table, music up, and a crowd having a good time. Both places close at 2am.',
     run(k, t) {
-      if (k < 0.2) return stroll([W('drama', -0.7, 1.3), W('drama', -0.7, 4.3), W('ekhaya', -0.7, 4.3), W('ekhaya', -0.7, 1.3)], k / 0.2, t, 0);
-      return onTheFloor(clubs[1], t, ['🍺 draught', '🐟 Flying Fish'], k > 0.62);
+      goingOut();
+      if (k < 0.38) return stroll([W('drama', -0.7, 1.3), W('drama', -0.7, 4.3), W('ekhaya', -0.7, 4.3), W('ekhaya', -0.7, 1.3)], k / 0.38, t, 0);
+      return onTheFloor(clubs[1], t, ['🍺 draught', '🐟 Flying Fish'], k > 0.7);
     } },
 
-  { day: 'Sunday, early', from: 26, to: 28, dur: 15, title: 'Blue Room till 4',
+  { date: 14, from: 26, to: 28, dur: 17, title: 'Blue Room till 4',
     text: 'When those two close, the night moves to a different street: Blue Room, over by Arcadia Street, open until 4am.',
     run(k, t) {
-      if (k < 0.14) return stroll([W('ekhaya', 2.5, 2.4), W('ekhaya', 2.5, 4.3), W('ekhaya', 12, 4.3)], k / 0.14, t, 0);
-      if (k < 0.3) return stroll([W('blue', -9, 4.3), W('blue', -0.7, 4.3), W('blue', -0.7, 1.3)], (k - 0.14) / 0.16, t, 1);
+      goingOut();
+      if (k < 0.17) return stroll([W('ekhaya', 2.5, 2.4), W('ekhaya', 2.5, 4.3), W('ekhaya', 7, 4.3)], k / 0.17, t, 0);
+      if (k < 0.37) return stroll([W('blue', -6, 4.3), W('blue', -0.7, 4.3), W('blue', -0.7, 1.3)], (k - 0.17) / 0.2, t, 1);
       return onTheFloor(clubs[2], t, ['🍺 last one', '⚡ Extreme']);
     } },
 
-  { day: 'Sunday, early', from: 28, to: 28.4, dur: 10, title: 'The 4am stop',
+  { date: 14, from: 28, to: 28.3, dur: 14, title: 'The 4am stop',
     text: 'On the way out, McDonald\'s: a mini burger, chips and six nuggets.',
     run(k, t) {
-      if (k < 0.4) return stroll([W('blue', -0.7, 1.3), W('blue', -0.7, 4.3), W('burger', -0.8, 4.3)], k / 0.4, t, 0);
+      goingOut();
+      if (k < 0.5) return stroll([W('blue', -0.7, 1.3), W('blue', -0.7, 4.3), W('burger', -0.8, 4.3)], k / 0.5, t, 0);
       put(me, ...W('burger', -0.8, 4.3), PI, 'stand', t); put(gf, ...W('burger', 0.4, 4.1), PI, 'stand', t); hold(gf.item, 'bag');
-      gf.say = '🍔 mini burger · 🍟 chips · 6 nuggets'; me.say = k > 0.7 ? '🚕 2 min' : '';
+      gf.say = '🍔 mini burger · 🍟 chips · 6 nuggets';
       return orbit(camAt6('burger', [3.5, 3.2, 10.5, -0.2, 1.4, 3.4], 1), t, 0.3);
     } },
 
-  { day: 'Sunday, early', from: 28.4, to: 28.8, dur: 10, title: 'Uber home',
-    text: 'No car, so it is an Uber back across to the apartment.',
-    run(k) { me.g.visible = gf.g.visible = false; return chase(drive(TO_HOME, ease(k)), 0); } },
+  { date: 14, from: 28.3, to: 28.9, dur: 26, title: 'Uber home',
+    text: 'Then the wait for a ride, and the empty roads back to the apartment.',
+    run(k, t) { goingOut(); if (k < 0.36) hold(gf.item, 'bag'); return ride(k, t, NIGHT_HOME); } },
 
-  { day: 'Sunday', from: 11.5, to: 13.5, dur: 12, title: 'The morning after',
+  { date: 14, from: 11.5, to: 13.5, dur: 12, title: 'Sunday',
     text: 'Hungover, and breakfast is long gone. Lunch is eggs.',
     run(k, t) {
       if (k < 0.4) { inBed(); me.say = '🤕'; gf.say = '😵‍💫'; return orbit([7.2, 3.8, 6, 3.2, 0.6, 1.2, 0], t, 0.3); }
       put(me, 1.5, -2.42, PI, 'stir', t); put(gf, ...SOFA_GF, 'sit', t); gf.say = '🤕'; me.say = '🍳'; state.eggs = true;
       return orbit([4.0, 2.8, 1.0, 1.2, 1.15, -3, 1], t, 0.3);
     } },
+
+  { date: (k) => 15 + Math.min(13, Math.floor(k * 14)), from: 9, to: 23, dur: 15, title: 'And the rest of the month',
+    text: 'It repeats until month end: eight office days in all, about twenty remote ones, wine and cards most evenings, and groove every weekend.',
+    run(k, t) {
+      if (k < 0.34) { put(me, ...DESK, 'type', t); gfHome(t); state.music = true; return orbit([-1.6, 3.0, 1.3, -4.4, 1.05, -1.5, 0], t, 0.2); }
+      if (k < 0.67) { wear(me, 'work'); gfHome(t); put(me, ...W('office', 3.6, -2.0), 0, 'type', t); return orbit(camAt6('office', [1.5, 4.2, 7.5, -0.2, 1.1, -1.6], 1), t); }
+      goingOut(); return onTheFloor(clubs[0], t, ['🍺', '🍾']);
+    } },
 ];
 
 /* ------------------------------------------------------------------ HUD + playback */
+
+const OFFICE_DAYS = [2, 4, 9, 11, 16, 18, 23, 25], DAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+$('#cal').innerHTML = Array.from({ length: 28 }, (_, i) => { const d = i + 1; return `<i class="${OFFICE_DAYS.includes(d) ? 'office' : i % 7 > 4 ? 'weekend' : ''}" title="Day ${d}"></i>`; }).join('');
+const calEls = [...$('#cal').children];
+let shownDate = 0;
+function showDate(d) {
+  if (d === shownDate) return;
+  shownDate = d;
+  calEls.forEach((el, i) => { el.classList.toggle('past', i + 1 < d); el.classList.toggle('now', i + 1 === d); });
+  $('#day').textContent = `Week ${Math.ceil(d / 7)} · ${DAY[(d - 1) % 7]}`;
+}
 
 let idx = 0, chT = 0, playing = true;
 $('#dots').innerHTML = chapters.map((c, i) => `<button data-go="${i}" title="${c.title}"><i></i></button>`).join('');
@@ -636,7 +892,7 @@ const dotEls = [...$('#dots').children];
 function go(i) {
   idx = (i + chapters.length) % chapters.length; chT = 0;
   const c = chapters[idx];
-  $('#title').textContent = c.title; $('#text').textContent = c.text; $('#day').textContent = c.day;
+  $('#title').textContent = c.title; $('#text').textContent = c.text;
   dotEls.forEach((d, j) => { d.className = j < idx ? 'done' : ''; d.firstChild.style.width = '0'; });
 }
 document.addEventListener('click', (e) => {
@@ -703,31 +959,33 @@ renderer.setAnimationLoop(() => {
   const ch = chapters[idx], k = clamp01(chT / ch.dur);
 
   // Defaults for this frame; the chapter then overrides what it needs.
-  for (const a of [me, gf]) { a.g.visible = true; a.say = ''; a.item.visible = a.itemL.visible = false; }
-  me.eyeMat.color.setHex(0xffffff);
+  for (const a of [me, gf]) { a.g.visible = true; a.say = ''; a.item.visible = a.itemL.visible = false; wear(a, 'home'); }
   chair.position.set(-3.78, 0, -1.5);
   car.visible = cards.visible = false;
-  steam.on = zzz.on = false; state.music = false; state.lampOn = true; state.eggs = false;
+  steam.on = zzz.on = false; state.music = false; state.lampOn = true; state.eggs = false; state.reserved = [];
+  for (const J of junctions) J.force = null;
   potTag.element.textContent = '';
 
   const want = ch.run(k, t);
   const narrow = innerWidth / innerHeight < 0.8 ? 1.55 : 1;
   wantLook.set(want[3], want[4], want[5]);
   wantPos.set(want[0], want[1], want[2]).sub(wantLook).multiplyScalar(narrow).add(wantLook);
-  const cutKey = idx + ':' + (want[6] || 0);
-  const f = cutKey !== lastCut ? 1 : 1 - Math.exp(-dt * 2.6);
+  const cutKey = idx + ':' + (want[6] || 0), jumped = cutKey !== lastCut;
+  const f = jumped ? 1 : 1 - Math.exp(-dt * 2.6);
   lastCut = cutKey;
   camPos.lerp(wantPos, f); camLook.lerp(wantLook, f);
   camera.position.copy(camPos); camera.lookAt(camLook);
   fill.position.copy(camPos).lerp(camLook, 0.35); fill.position.y += 1.2;
   sun.target.position.copy(camLook); sun.position.copy(camLook).add(tmpV.set(16, 30, 14));
+  stars.position.copy(camPos);
 
   for (const a of [me, gf]) { if (a.say !== a.said) { a.said = a.say; a.bubble.element.textContent = a.say; } a.bubble.userData.on = !!a.say; }
   potTag.userData.on = !!potTag.element.textContent;
   pot.visible = !state.eggs;
-  notes.on = state.music && idx < 7;
+  notes.on = state.music && idx < 6;
 
-  // Clock, sky and light follow the time of day.
+  // Calendar, clock, sky and light follow the date and time of day.
+  showDate(typeof ch.date === 'function' ? ch.date(k) : ch.date);
   const hour = lerp(ch.from, ch.to, k) % 24;
   $('#clock').textContent = `${String(Math.floor(hour)).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}`;
   dotEls[idx].firstChild.style.width = `${k * 100}%`;
@@ -745,6 +1003,8 @@ renderer.setAnimationLoop(() => {
   shade.material.color.setHex(state.lampOn && night > 0.3 ? 0xd9b98a : 0x6b5a45);
   officeLight.intensity = lerp(18, 5, dayAmt);
   carLight.intensity = car.visible ? night * 9 : 0;
+
+  updateTraffic(dt, t, hour > 0.5 && hour < 5.5, state.reserved, jumped);
 
   // Music makes the screens, soundbar and clubs move.
   const beat = Math.abs(Math.sin(t * 5.9));

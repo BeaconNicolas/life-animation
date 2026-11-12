@@ -1,6 +1,6 @@
-# A Week in Hatfield
+# A Month in Hatfield
 
-A 3D animated week in Hatfield, Pretoria: remote days at the desk, Uber to the office,
+A 3D animated month in Hatfield, Pretoria: remote days at the desk, Uber to the office,
 the evening wine run, cooking, cards on the couch, and weekend groove at Drama, Ekhaya and Blue Room.
 
 Plain HTML + [Three.js](https://threejs.org) loaded from a CDN. No build step.
