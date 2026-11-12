@@ -7,6 +7,8 @@
 // Chapters place the characters, set the clock and aim the camera.
 
 import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -131,64 +133,124 @@ function floaters(parent, x, y, z, chars, { rise = 1.6, spread = 0.5, rate = 0.3
 }
 
 /* ------------------------------------------------------------------ people */
+// Realistic rigged people from the Microsoft Rocketbox avatar library (MIT licence),
+// moved by its motion-captured animations. See assets/ROCKETBOX-LICENSE.txt.
 
-const GEO = {
-  leg: new THREE.CapsuleGeometry(0.085, 0.5, 6, 14), arm: new THREE.CapsuleGeometry(0.065, 0.36, 6, 14),
-  torso: new THREE.CapsuleGeometry(0.2, 0.3, 8, 18), head: new THREE.SphereGeometry(0.23, 28, 20),
-  hand: new THREE.SphereGeometry(0.072, 12, 10), eye: new THREE.SphereGeometry(0.042, 12, 10), pupil: new THREE.SphereGeometry(0.022, 8, 6),
-  hair: new THREE.SphereGeometry(0.245, 28, 14, 0, PI * 2, 0, PI * 0.52), smile: new THREE.TorusGeometry(0.07, 0.012, 6, 14, PI),
-  shoe: new RoundedBoxGeometry(0.16, 0.1, 0.28, 3, 0.045), skirt: new THREE.CylinderGeometry(0.19, 0.34, 0.5, 24),
-  ear: new THREE.SphereGeometry(0.05, 8, 6), item: new THREE.CylinderGeometry(0.045, 0.04, 0.2, 14),
-  hood: new THREE.TorusGeometry(0.15, 0.055, 8, 18),
+const AVATARS = {
+  him: { file: 'Male_Adult_18', tex: 'm023', sex: 'm', height: 181 },
+  her: { file: 'Female_Party_02', tex: 'f022', sex: 'f', height: 179 },
+  man: { file: 'Male_Adult_12', tex: 'm007', sex: 'm', height: 181 },
+  woman: { file: 'Female_Adult_11', tex: 'f011', sex: 'f', height: 174 },
+  manager: { file: 'Female_Adult_15', tex: 'f018', sex: 'f', height: 174 },
 };
+// What each "pose" used by the chapters plays.
+const CLIP_FOR = { walk: 'walk', carry: 'walk', sit: 'sit', type: 'sit', sip: 'sit', lie: 'idle', dance: 'dance1', groove: 'dance2', drink: 'drink', stir: 'work', wave: 'wave', stand: 'idle' };
+const TINTS = [0xffffff, 0xffd9d9, 0xd9e8ff, 0xfff2c9, 0xd9ffe4, 0xe9d9ff, 0xcfcfcf, 0xffe0c2];
+const actors = [];
+const library = { ready: false, models: {}, clips: {} };
+const itemGeo = new THREE.CylinderGeometry(4.5, 4, 20, 14); // in centimetres, like the models
 let phase = 0;
-function person({ skin, top, bottom = 0x23232e, shoes = 0xf4f4f4, hair = 0x14100e, style = 'fade', h = 1.7, dress = false, hoodie = false }) {
-  const g = new THREE.Group(), root = new THREE.Group();
-  g.add(root);
-  root.scale.setScalar(h / 1.7);
-  const mSkin = M(skin, { roughness: 0.6 }), mTop = M(top), mBot = dress ? mSkin : M(bottom), mHair = M(hair, { roughness: 0.9 }), mShoe = M(shoes);
-  const leg = (x) => { const p = new THREE.Group(); p.position.set(x, 0.8, 0); mesh(p, GEO.leg, mBot, 0, -0.335, 0); mesh(p, GEO.shoe, mShoe, 0, -0.74, 0.05); root.add(p); return p; };
-  const arm = (x) => { const p = new THREE.Group(); p.position.set(x, 1.37, 0); mesh(p, GEO.arm, mTop, 0, -0.24, 0); mesh(p, GEO.hand, mSkin, 0, -0.52, 0); root.add(p); return p; };
-  const legL = leg(-0.11), legR = leg(0.11), armL = arm(-0.31), armR = arm(0.31);
-  mesh(root, GEO.torso, mTop, 0, 1.12, 0).scale.set(1.12, 1, 0.82);
-  if (dress) mesh(root, GEO.skirt, mTop, 0, 0.74, 0);
-  if (hoodie) mesh(root, GEO.hood, mTop, 0, 1.45, -0.05).rotation.x = PI / 2 + 0.35;
-  mesh(root, GEO.head, mSkin, 0, 1.68, 0);
-  for (const x of [-0.225, 0.225]) mesh(root, GEO.ear, mSkin, x, 1.68, 0);
-  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35 });
-  for (const x of [-0.085, 0.085]) { mesh(root, GEO.eye, eyeMat, x, 1.71, 0.195); mesh(root, GEO.pupil, lit(0x1a1210), x, 1.71, 0.23); }
-  mesh(root, GEO.smile, lit(0x2a1a14), 0, 1.625, 0.205).rotation.z = PI;
-  mesh(root, GEO.hair, mHair, 0, 1.7, -0.012).rotation.x = -0.28;
-  if (style === 'bun') { ball(root, 0.13, mHair, 0, 2.0, -0.07); ball(root, 0.21, mHair, 0, 1.66, -0.1).scale.set(1.05, 1.05, 0.75); }
-  if (style === 'long') rbox(root, 0.42, 0.52, 0.16, mHair, 0, 1.5, -0.17, 0.07);
-  if (style === 'afro') ball(root, 0.3, mHair, 0, 1.8, -0.04).scale.set(1, 0.85, 1);
-  const item = (p) => { const m = mesh(p, GEO.item, M(0xffffff, { roughness: 0.3 }), 0, -0.6, 0.08); m.visible = false; return m; };
-  scene.add(g);
-  const a = { g, root, legL, legR, armL, armR, eyeMat, item: item(armR), itemL: item(armL), ph: (phase += 1.7), say: '', said: null };
-  a.bubble = tag(g, '', 'say', 0, 2.5, 0, 40); a.bubble.userData.on = false;
+
+function person({ model = 'man', h = 1.75, tint = null }) {
+  const g = new THREE.Group(), inner = new THREE.Group();
+  g.add(inner); scene.add(g);
+  const mk = () => { const m = new THREE.Mesh(itemGeo, M(0xffffff, { roughness: 0.3 })); m.visible = false; m.castShadow = true; return m; };
+  const a = { g, inner, model, h, tint, item: mk(), itemL: mk(), eyeMat: { color: { setHex() {} } }, ph: (phase += 1.7), say: '', said: null, want: 'idle', lying: false, cur: null, last: new THREE.Vector3() };
+  a.bubble = tag(g, '', 'say', 0, h + 0.5, 0, 40); a.bubble.userData.on = false;
+  actors.push(a);
+  if (library.ready) dress(a);
   return a;
 }
 
-function pose(a, name, t = 0) {
-  const { root, legL, legR, armL, armR } = a;
-  root.position.set(0, 0, 0); root.rotation.set(0, 0, 0);
-  for (const p of [legL, legR, armL, armR]) p.rotation.set(0, 0, 0);
-  const sit = () => { legL.rotation.x = legR.rotation.x = -PI / 2; root.position.y = -0.33; };
-  const b = t * 5.9 + a.ph;
-  switch (name) {
-    case 'walk': { const s = Math.sin(t * 9 + a.ph); legL.rotation.x = s * 0.6; legR.rotation.x = -s * 0.6; armL.rotation.x = -s * 0.5; armR.rotation.x = s * 0.5; root.position.y = Math.abs(Math.cos(t * 9 + a.ph)) * 0.04; break; }
-    case 'carry': { const s = Math.sin(t * 9 + a.ph); legL.rotation.x = s * 0.6; legR.rotation.x = -s * 0.6; armL.rotation.x = armR.rotation.x = -0.5; break; }
-    case 'sit': sit(); armL.rotation.x = armR.rotation.x = -0.35; break;
-    case 'type': sit(); armL.rotation.x = -1.15 + Math.sin(t * 15) * 0.07; armR.rotation.x = -1.15 + Math.cos(t * 13) * 0.07; break;
-    case 'sip': sit(); armL.rotation.x = -0.5; armR.rotation.x = -1.2 - Math.max(0, Math.sin(t * 1.1 + a.ph)) * 0.9; break;
-    case 'lie': root.rotation.x = -PI / 2; root.position.y = 0.66; break;
-    case 'dance': root.position.y = Math.abs(Math.sin(b)) * 0.13; root.rotation.y = Math.sin(b * 0.5) * 0.5; armL.rotation.z = -2.2 + Math.sin(b) * 0.5; armR.rotation.z = 2.2 - Math.sin(b + 1) * 0.5; legL.rotation.x = Math.sin(b) * 0.25; legR.rotation.x = -Math.sin(b) * 0.25; break;
-    case 'groove': root.position.y = Math.abs(Math.sin(b)) * 0.1; root.rotation.y = Math.sin(b * 0.5) * 0.35; armL.rotation.z = -0.5 + Math.sin(b) * 0.4; armR.rotation.x = -1.3 - Math.max(0, Math.sin(t * 0.9 + a.ph)) * 0.8; legL.rotation.x = Math.sin(b) * 0.2; legR.rotation.x = -Math.sin(b) * 0.2; break;
-    case 'stir': armR.rotation.x = -1.1; armR.rotation.z = Math.sin(t * 6 + a.ph) * 0.3; armL.rotation.x = -0.4; break;
-    case 'wave': armR.rotation.z = 2.6 + Math.sin(t * 8 + a.ph) * 0.35; break;
-    default: break;
+function dress(a) {
+  const spec = AVATARS[a.model];
+  const obj = SkeletonUtils.clone(library.models[a.model]);
+  obj.scale.setScalar(a.h / spec.height);
+  obj.traverse((o) => {
+    if (!o.isSkinnedMesh) return;
+    o.castShadow = true; o.receiveShadow = true;
+    if (a.tint) o.material = o.material.map((m) => { if (!/_body$/.test(m.name)) return m; const c = m.clone(); c.color.set(a.tint); return c; });
+  });
+  a.inner.add(obj); a.obj = obj;
+  a.mixer = new THREE.AnimationMixer(obj);
+  a.actions = {};
+  for (const [name, clip] of Object.entries(library.clips[spec.sex])) {
+    const act = a.mixer.clipAction(clip);
+    if (name !== 'walk') act.setLoop(THREE.LoopPingPong);
+    a.actions[name] = act;
+  }
+  const hr = obj.getObjectByName('Bip01_R_Hand'), hl = obj.getObjectByName('Bip01_L_Hand');
+  if (hr) { hr.add(a.item); a.item.position.set(9, -3, 0); a.item.rotation.x = PI / 2; }
+  if (hl) { hl.add(a.itemL); a.itemL.position.set(9, -3, 0); a.itemL.rotation.x = PI / 2; }
+}
+
+function pose(a, name) {
+  a.want = CLIP_FOR[name] || 'idle';
+  a.lying = name === 'lie';
+  if (name === 'dance' && Math.floor(a.ph) % 2) a.want = 'dance2';
+}
+function play(a, name) {
+  if (a.cur === name || !a.actions[name]) return;
+  const next = a.actions[name];
+  next.reset(); next.time = name === 'walk' ? 0 : (a.ph * 1.3) % next.getClip().duration;
+  next.setEffectiveWeight(1).fadeIn(0.35).play();
+  if (a.curAction) a.curAction.fadeOut(0.35);
+  a.cur = name; a.curAction = next;
+}
+// Called every frame: start the right clip, lie people down, and advance the motion capture.
+function animatePeople(dt, camPos) {
+  for (const a of actors) {
+    if (!a.mixer) continue;
+    play(a, a.want);
+    a.inner.rotation.x = a.lying ? -PI / 2 : 0;
+    a.inner.position.y = a.lying ? 0.72 : 0;
+    if (a.g.visible && a.g.position.distanceToSquared(camPos) < 3600) {
+      if (a.cur === 'walk') {
+        const speed = a.g.position.distanceTo(a.last) / Math.max(dt, 1e-3);
+        a.actions.walk.timeScale = THREE.MathUtils.clamp(speed / 1.25, 0.7, 1.9);
+      }
+      a.mixer.update(dt);
+    }
+    a.last.copy(a.g.position);
   }
 }
+
+async function loadClips(sex) {
+  const [index, buf] = await Promise.all([fetch(`/assets/anim_${sex}.json`).then((r) => r.json()), fetch(`/assets/anim_${sex}.bin`).then((r) => r.arrayBuffer())]);
+  const data = new Float32Array(buf), clips = {};
+  for (const e of index) {
+    const times = Float32Array.from({ length: e.frames }, (_, i) => (i / (e.frames - 1)) * e.duration);
+    const tracks = e.tracks.map((tr) => {
+      const values = data.subarray(tr.o, tr.o + e.frames * tr.s);
+      return tr.s === 4 ? new THREE.QuaternionKeyframeTrack(tr.n, times, values) : new THREE.VectorKeyframeTrack(tr.n, times, values);
+    });
+    clips[e.name] = new THREE.AnimationClip(e.name, e.duration, tracks);
+  }
+  return clips;
+}
+async function loadPeople() {
+  const fbx = new FBXLoader(), tl = new THREE.TextureLoader();
+  const tex = (n) => { const t = tl.load('/assets/' + n); t.colorSpace = THREE.SRGBColorSpace; return t; };
+  await Promise.all([
+    ...Object.entries(AVATARS).map(async ([key, s]) => {
+      const obj = await fbx.loadAsync(`/assets/${s.file}.fbx`);
+      obj.children.filter((c) => c.isLight).forEach((c) => obj.remove(c));
+      obj.traverse((o) => {
+        if (!o.isSkinnedMesh) return;
+        o.material = [].concat(o.material).map((m) => {
+          const kind = m.name.split('_').pop();
+          if (kind === 'opacity') return new THREE.MeshStandardMaterial({ name: m.name, map: tex(`${s.tex}_opacity_color.png`), transparent: true, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.9 });
+          return new THREE.MeshStandardMaterial({ name: m.name, map: tex(`${s.tex}_${kind}_color.jpg`), roughness: 0.85 });
+        });
+      });
+      library.models[key] = obj;
+    }),
+    ...['m', 'f'].map(async (sex) => { library.clips[sex] = await loadClips(sex); }),
+  ]);
+  library.ready = true;
+  actors.forEach(dress);
+}
+
 function put(a, x, z, rot, name, t) { a.g.position.set(x, 0, z); a.g.rotation.y = rot; pose(a, name, t); }
 function along(pts, k) {
   const seg = [];
@@ -212,11 +274,8 @@ const HELD = {
 };
 function hold(itemMesh, kind) { const [c, w, h] = HELD[kind]; itemMesh.visible = true; itemMesh.material.color.setHex(c); itemMesh.scale.set(w, h, w); }
 
-const SKINS = [0x5a3620, 0x6b4226, 0x7a4a2b, 0x8a5a3a, 0x4a2c1a];
-const TOPS = [0xff5fa2, 0x5ee6ff, 0xffd166, 0xa78bfa, 0x06d6a0, 0xf8f8f8, 0xef476f, 0x118ab2];
-
-const me = person({ skin: 0x6b4226, top: 0x1fb6a6, bottom: 0x1c1f2b, h: 1.73, hoodie: true });
-const gf = person({ skin: 0x7a4a2b, top: 0xff5fa2, style: 'bun', h: 1.57, dress: true, shoes: 0xffffff });
+const me = person({ model: 'him', h: 1.73 });
+const gf = person({ model: 'her', h: 1.57 });
 
 /* ------------------------------------------------------------------ the town */
 
@@ -300,7 +359,7 @@ cyl(apt, 0.2, 0.36, 0xd9825b, -4.4, 0.18, 3.0, 0.26);
 for (const [dx, dy, dz, r] of [[0, 0.9, 0, 0.34], [0.2, 0.65, 0.1, 0.26], [-0.2, 0.7, -0.1, 0.27], [0, 1.2, 0.05, 0.22]]) mesh(apt, new THREE.IcosahedronGeometry(r, 1), M(0x3f8f5a), -4.4 + dx, dy, 3.0 + dz);
 cyl(apt, 0.03, 1.7, black, -0.9, 0.85, -3.1); cyl(apt, 0.2, 0.03, black, -0.9, 0.02, -3.1);
 const shade = cyl(apt, 0.26, 0.34, lit(0xd9b98a), -0.9, 1.8, -3.1, 0.16);
-const lamp = new THREE.PointLight(0xffc98a, 0, 16); lamp.position.set(-1, 2.6, -1.2); apt.add(lamp);
+const lamp = new THREE.PointLight(0xffc98a, 0, 16); lamp.position.set(-0.6, 3.0, 0.4); apt.add(lamp);
 tag(apt, 'Studio apartment', 'plain', 0, 4.0, -3.6, 60);
 // desk: two 27" monitors, two laptops, soundbar
 rbox(apt, 0.9, 0.07, 2.7, darkWood, -4.55, 0.76, -1.5, 0.03);
@@ -374,7 +433,7 @@ const staff = [];
   rbox(office, 0.68, 0.42, 0.045, black, x, 1.16, -0.98, 0.02); cyl(office, 0.025, 0.2, black, x, 0.9, -0.98); cyl(office, 0.13, 0.02, black, x, 0.805, -0.98);
   rbox(office, 0.52, 0.1, 0.52, 0x2a2b36, x, 0.47, -2.0, 0.05); rbox(office, 0.5, 0.62, 0.1, 0x2a2b36, x, 0.82, -2.26, 0.05); cyl(office, 0.035, 0.4, 0x777777, x, 0.22, -2.0);
   if (i === 3) return; // the empty desk at the far end
-  const p = i === 0 ? person({ skin: 0xf1c9a5, top: 0x3a506b, hair: 0xd9b36c, style: 'long', h: 1.68 }) : person({ skin: pick(SKINS, i + 2), top: pick(TOPS, i + 3), style: i === 1 ? 'bun' : 'fade', h: 1.7 });
+  const p = i === 0 ? person({ model: 'manager', h: 1.68 }) : person({ model: i === 1 ? 'woman' : 'man', h: 1.72, tint: pick(TINTS, i + 2) });
   p.g.position.set(O.office[0] + x, 0, O.office[1] - 2.0);
   staff.push(p);
 });
@@ -400,10 +459,10 @@ function club(key, name, color, color2, note) {
   rbox(g, 2.3, 1.05, 0.75, 0x241b33, -2.9, 0.55, -2.0, 0.08); rbox(g, 1.2, 0.06, 0.5, 0x0e0b14, -2.9, 1.12, -2.0, 0.02);
   for (const x of [-3.2, -2.6]) cyl(g, 0.16, 0.02, 0x111111, x, 1.16, -2.0);
   const speakers = [-4.15, -1.65].map((x) => { rbox(g, 0.85, 1.75, 0.75, 0x0e0b14, x, 0.9, -2.0, 0.08); cyl(g, 0.16, 0.04, lit(color), x, 1.45, -1.61).rotation.x = PI / 2; const s = cyl(g, 0.28, 0.05, lit(color2), x, 0.75, -1.61); s.rotation.x = PI / 2; return s; });
-  const dj = person({ skin: pick(SKINS, cx), top: 0xf8f8f8, h: 1.75, style: 'afro' }); dj.g.position.set(cx - 2.9, 0, cz - 2.65);
+  const dj = person({ model: 'man', h: 1.78, tint: 0xe8e8ff }); dj.g.position.set(cx - 2.9, 0, cz - 2.65);
   const crowd = [];
   for (let i = 0; i < 9; i++) {
-    const p = person({ skin: pick(SKINS, i + cx), top: pick(TOPS, i * 3 + cx), style: pick(['bun', 'fade', 'afro'], i), dress: i % 2 === 0, h: 1.55 + (i % 4) * 0.07 });
+    const p = person({ model: pick(['man', 'woman', 'woman', 'man', 'manager', 'woman', 'man'], i + cx), tint: pick(TINTS, i * 3 + cx), h: 1.6 + (i % 4) * 0.06 });
     let x, z; do { x = -3.8 + Math.random() * 7.6; z = -1.1 + Math.random() * 3.6; } while ((Math.abs(x) < 1.5 && z > 0.2) || (x > 2 && z > 1.2));
     p.g.position.set(cx + x, 0, cz + z); p.g.rotation.y = (Math.random() - 0.5) * 1.6;
     if (i % 3 === 0) hold(p.item, i % 2 ? 'cider' : 'beer');
@@ -460,7 +519,7 @@ function onTheFloor(c, t, drinks, hubbly) {
   state.music = true;
   hold(me.item, 'beer'); hold(gf.item, 'cider');
   if (hubbly) {
-    put(me, ...W(c.key, 2.5, 2.4), PI / 2, 'groove', t); put(gf, ...W(c.key, 4.3, 2.4), -PI / 2, 'groove', t);
+    put(me, ...W(c.key, 2.5, 2.4), PI / 2, 'drink', t); put(gf, ...W(c.key, 4.3, 2.4), -PI / 2, 'drink', t);
     me.say = '💨 hubbly'; gf.say = drinks[1];
     return orbit(camAt6(c.key, [5.5, 2.6, 7.2, 3.2, 1.3, 1.6], 3), t);
   }
@@ -635,6 +694,7 @@ const SKY = { night: new THREE.Color(0x0a0718), day: new THREE.Color(0x8fc7ff), 
 const clock = new THREE.Clock();
 let lastCut = '';
 go(0);
+loadPeople().catch((err) => console.error('people failed to load', err));
 window.__life = { go, seek: (k) => { chT = k * chapters[idx].dur; } }; // handy for jumping around while editing
 
 renderer.setAnimationLoop(() => {
@@ -681,7 +741,7 @@ renderer.setAnimationLoop(() => {
   stars.material.opacity = night; bloom.strength = lerp(0.28, 0.8, night);
   towerMats.forEach((m) => (m.emissiveIntensity = night * 0.9));
   windowPane.material.color.copy(sky).lerp(white, 0.25);
-  lamp.intensity = state.lampOn ? lerp(3, 26, night) : 1.2;
+  lamp.intensity = state.lampOn ? lerp(3, 16, night) : 1.2;
   shade.material.color.setHex(state.lampOn && night > 0.3 ? 0xd9b98a : 0x6b5a45);
   officeLight.intensity = lerp(18, 5, dayAmt);
   carLight.intensity = car.visible ? night * 9 : 0;
@@ -703,6 +763,7 @@ renderer.setAnimationLoop(() => {
   });
   staff.forEach((p) => pose(p, 'type', t));
 
+  animatePeople(dt, camPos);
   loops.forEach((e) => e.update(t));
   for (const { o, far } of tags) { let shown = o.userData.on !== false; for (let p = o.parent; p && shown; p = p.parent) shown = p.visible; o.visible = shown && o.getWorldPosition(tmpV).distanceTo(camera.position) < far; }
 

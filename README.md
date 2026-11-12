@@ -10,3 +10,8 @@ Plain HTML + [Three.js](https://threejs.org) loaded from a CDN. No build step.
 
 To change the story, edit the `chapters` list in `main.js`. Each chapter has a clock range, a caption
 and a `run` function that places the characters and the camera.
+
+## People
+
+The characters are from the [Microsoft Rocketbox avatar library](https://github.com/microsoft/Microsoft-Rocketbox)
+(MIT licence, see `assets/ROCKETBOX-LICENSE.txt`), with its motion-captured animations converted to a compact format in `assets/`.
