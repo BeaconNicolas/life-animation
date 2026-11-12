@@ -8,7 +8,7 @@ Plain HTML + [Three.js](https://threejs.org) loaded from a CDN. No build step.
 - `index.html` — the page and the on-screen story panel
 - `main.js` — the town (four streets), the characters and the list of chapters
 
-To change the story, edit the `chapters` list in `main.js`. Each chapter has a clock range, a caption
+The story covers every day of the current calendar month. To change it, edit `SCENES` (what happens) and the month loop below it (which day gets which shots) in `main.js`.
 and a `run` function that places the characters and the camera.
 
 ## People

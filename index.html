@@ -29,6 +29,9 @@
     .when span { display: block; margin-top: 4px; font-size: .64rem; color: var(--dim); text-transform: uppercase; letter-spacing: .16em; }
     .cal { display: grid; grid-template-columns: repeat(7, 9px); gap: 3px; justify-content: center; margin-top: 8px; }
     .cal i { width: 9px; height: 9px; border-radius: 3px; background: rgba(255, 255, 255, .16); }
+    .cal b { font: 600 7px/9px Inter, sans-serif; color: var(--dim); text-align: center; width: 9px; }
+    .cal u { width: 9px; height: 9px; }
+    .dots button { min-width: 0; }
     .cal i.office { background: rgba(142, 203, 255, .55); }
     .cal i.weekend { background: rgba(255, 95, 162, .5); }
     .cal i.past { opacity: .35; }
@@ -63,6 +66,9 @@
       .story h2 { font-size: 1.05rem; }
       .story p { font-size: .82rem; min-height: 5.6em; }
       .ctl.wide span { display: none; }
+      .bar { flex-wrap: wrap; }
+      .dots { order: 9; flex-basis: 100%; gap: 2px; }
+      #sound { margin-left: auto; }
     }
   </style>
   <script type="importmap">
@@ -72,7 +78,7 @@
 <body>
   <div id="stage"></div>
 
-  <header class="hud brand">A Month in Hatfield<small>Pretoria · streets © OpenStreetMap</small></header>
+  <header class="hud brand">A Month in Hatfield<small><span id="month"></span> · Pretoria · streets © OpenStreetMap</small></header>
 
   <section class="hud glass story">
     <div class="row">
@@ -86,6 +92,7 @@
       <button class="ctl" id="prev" aria-label="Previous scene">⏮</button>
       <button class="ctl" id="play" aria-label="Pause or play">⏸</button>
       <button class="ctl" id="next" aria-label="Next scene">⏭</button>
+      <button class="ctl wide" id="speed" aria-label="Playback speed">1×</button>
       <div class="dots" id="dots"></div>
       <button class="ctl wide" id="sound" aria-label="Toggle music">♪ <span>Groove</span></button>
     </div>

@@ -844,25 +844,25 @@ const NIGHT_HOME = {
 };
 for (const r of [TO_WORK, TO_HOME, NIGHT_HOME]) r.stopAt = stopFrac(r.first);
 
-// `date` is the day of the month (1 = the first Monday). Tuesdays and Thursdays are office days: eight a month.
-const chapters = [
-  { date: 1, from: 7.6, to: 9, dur: 12, title: 'Hatfield, Pretoria',
+// ---- Scenes. Each one is written to play from k = 0 to 1; a day can use all of it or just a slice.
+const MENUS = ['🍗 pap & chicken', '🍚 rice & chicken', '🌭 wors', '🥩 beef'];
+let menuToday = -1; // -1 = cycle through all four
+const SCENES = {
+  intro: { from: 7.6, to: 9, dur: 12, title: 'Hatfield, Pretoria',
     text: 'A brick apartment block on a Hatfield street, morning traffic already moving. Inside: a studio, a couple in their twenties, and a month with a rhythm of its own.',
     run(k, t) {
       put(me, ...DESK, 'type', t); put(gf, ...SOFA_ME, 'sit', t);
       if (k < 0.55) return mix([44, 21, 52, 0, 4.5, 0, 0], [15, 5.5, 21, 0, 3.6, 2, 0], ease(k / 0.55));
       return indoors(orbit([4.3, 2.8, 3.0, -2.8, 1, -1.5, 1], t, 0.25));
     } },
-
-  { date: 1, from: 9, to: 17, dur: 15, title: 'A remote day',
-    text: 'Most of the month is spent working from the apartment: two 27-inch Dell monitors, an HP ZBook for work beside a personal Dell, and a JBL soundbar playing live amapiano and 3-step mixes.',
+  desk: { from: 9, to: 17, dur: 15, title: 'A remote day',
+    text: 'Working from the apartment: two 27-inch Dell monitors, an HP ZBook for work beside a personal Dell, and a JBL soundbar playing live amapiano and 3-step mixes.',
     run(k, t) {
       put(me, ...DESK, 'type', t); gfHome(t, k > 0.3 && k < 0.5 ? '📱' : ''); state.music = true; state.indoor = true;
       if (k < 0.55) { me.say = '💻'; return orbit(mix([1.2, 3.0, 3.1, -3.6, 1, -1.5], [-1.6, 2.8, 1.3, -4.4, 1.05, -1.5], ease(k / 0.55)), t, 0.2); }
       return eyes([-3.95, 1.24, -1.5], [-4.8, 1.14, -1.5 + Math.sin(t * 0.45) * 0.5], 1, 58);
     } },
-
-  { date: 1, from: 17.5, to: 18.4, dur: 15, title: 'The wine run',
+  wine: { from: 17.5, to: 18.4, dur: 15, title: 'The wine run',
     text: 'Every evening, a walk down the street to the bottle store for two bottles of Robertson: a sweet red for her, a dry white for him.',
     run(k, t) {
       gfHome(t);
@@ -872,12 +872,10 @@ const chapters = [
       else { walk(me, [...path].reverse(), (k - 0.58) / 0.42, t, 'carry'); hold(me.item, 'bottleWhite'); hold(me.itemL, 'bottleRed'); me.say = 'Robertson × 2'; }
       return follow(me, 0, 3.5, 3.2, 9.5);
     } },
-
-  { date: 1, from: 19, to: 20.5, dur: 11, title: '7pm: cooking',
+  cook: { from: 19, to: 20.5, dur: 11, title: '7pm: cooking',
     text: 'Pap and chicken, rice and chicken, wors, or beef. It depends on the day.',
-    run(k, t) { put(me, 1.55, -2.42, PI, 'stir', t); put(gf, 0.6, -2.42, PI, 'stir', t + 1); steam.on = true; potTag.element.textContent = ['🍗 pap & chicken', '🍚 rice & chicken', '🌭 wors', '🥩 beef'][Math.min(3, Math.floor(k * 4))]; return indoors(orbit([3.9, 2.8, 1.2, 1.0, 1.15, -3], t, 0.25)); } },
-
-  { date: 1, from: 21, to: 24.6, dur: 14, title: 'Wine, cards and the mix',
+    run(k, t) { put(me, 1.55, -2.42, PI, 'stir', t); put(gf, 0.6, -2.42, PI, 'stir', t + 1); steam.on = true; potTag.element.textContent = MENUS[menuToday < 0 ? Math.min(3, Math.floor(k * 4)) : menuToday]; return indoors(orbit([3.9, 2.8, 1.2, 1.0, 1.15, -3], t, 0.25)); } },
+  cards: { from: 21, to: 24.6, dur: 14, title: 'Wine, cards and the mix',
     text: 'After dinner: the couch, the wine, a hand of cards each, and the groove mix on the monitors until midnight or 1am.',
     run(k, t) {
       chair.position.set(-4.0, 0, -3.05);
@@ -886,16 +884,13 @@ const chapters = [
       cards.visible = me.fan.visible = gf.fan.visible = true; state.music = true;
       return indoors(orbit(mix([-0.2, 2.8, 3.1, -3.3, 0.9, -1.5], [-4.6, 2.9, 2.0, -2.9, 0.95, -1.5], ease(k)), t, 0.2));
     } },
-
-  { date: 1, from: 24.8, to: 31, dur: 8, title: 'Lights out',
+  sleep: { from: 24.8, to: 31, dur: 8, title: 'Lights out',
     text: 'Bedtime depends on whether tomorrow is an office day.',
     run(k, t) { state.lampOn = false; chair.position.set(-4.0, 0, -3.05); inBed(); zzz.on = true; return indoors(orbit([0.9, 2.5, 3.1, 3.1, 0.7, 1.1], t, 0.2)); } },
-
-  { date: 2, from: 7.4, to: 8.4, dur: 40, title: 'Office day: waiting for the Uber',
-    text: 'Eight days a month are office days. No car, so it starts at the kerb waiting for an Uber, then the robot at Jan Shoba Street and a long ride through the morning traffic.',
+  toWork: { from: 7.4, to: 8.4, dur: 40, title: 'Office day: waiting for the Uber',
+    text: 'No car, so an office day starts at the kerb waiting for an Uber, then the robot at Jan Shoba Street and a long ride through the morning traffic.',
     run(k, t) { wear(me, 'work'); put(gf, ...SOFA_GF, 'sit', t); return ride(k, t, TO_WORK); } },
-
-  { date: 2, from: 8.5, to: 17, dur: 13, title: `At ${STORY.workplace}`,
+  office: { from: 8.5, to: 17, dur: 13, title: `At ${STORY.workplace}`,
     text: 'Platform engineering, nine to five. After a late night, red eyes pick the desk furthest from the manager.',
     run(k, t) {
       wear(me, 'work'); gfHome(t);
@@ -903,38 +898,33 @@ const chapters = [
       me.say = k < 0.55 ? '🥴' : '👀';
       return k < 0.55 ? orbit(camAt6('office', [1.5, 4.2, 7.5, -0.2, 1.1, -1.6], 1), t) : orbit(camAt6('office', [5.0, 2.2, 1.6, 3.4, 1.25, -1.9], 2), t, 0.15);
     } },
-
-  { date: 2, from: 17.05, to: 18.1, dur: 36, title: 'The ride home',
+  toHome: { from: 17.05, to: 18.1, dur: 36, title: 'The ride home',
     text: 'Five o\'clock: back to the kerb, another wait, and Jan Shoba Street again in the evening traffic.',
     run(k, t) { wear(me, 'work'); gfHome(t); return ride(k, t, TO_HOME); } },
-
-  { date: 13, from: 21.5, to: 23.75, dur: 20, title: 'Saturday night: Drama',
-    text: 'Weekends mean groove, dressed for it, and it is close enough to walk over to Burnett Street. First stop, Drama. Stella Artois draught for him; Bernini, Extreme or Flying Fish for her.',
+  drama: { from: 21.5, to: 23.75, dur: 20, title: 'Groove: Drama',
+    text: 'Weekends mean groove, dressed for it, and it is close enough to walk over to Burnett Street. Stella Artois draught for him; Bernini, Extreme or Flying Fish for her.',
     run(k, t) {
       goingOut();
       if (k < 0.16) return stroll([DOOR, [8, 4.1]], k / 0.16, t, 0);
       if (k < 0.34) return stroll([W('drama', -6, 4.3), W('drama', -0.7, 4.3), W('drama', -0.7, 1.3)], (k - 0.16) / 0.18, t, 1);
       return onTheFloor(clubs[0], t, ['🍺 Stella draught', '🍾 Bernini'], false, k > 0.7);
     } },
-
-  { date: 13, from: 23.75, to: 26, dur: 18, title: 'Ekhaya, a few doors down',
-    text: 'Same street, next venue. Hubbly on the table, music up, and a crowd having a good time. Both places close at 2am.',
+  ekhaya: { from: 23.75, to: 26, dur: 18, title: 'Groove: Ekhaya',
+    text: 'A few doors down on the same street. Hubbly on the table, music up, and a crowd having a good time. Both places close at 2am.',
     run(k, t) {
       goingOut();
       if (k < 0.38) return stroll([W('drama', -0.7, 1.3), W('drama', -0.7, 4.3), W('ekhaya', -0.7, 4.3), W('ekhaya', -0.7, 1.3)], k / 0.38, t, 0);
       return onTheFloor(clubs[1], t, ['🍺 draught', '🐟 Flying Fish'], k > 0.7);
     } },
-
-  { date: 14, from: 26, to: 28, dur: 17, title: 'Blue Room till 4',
-    text: 'When those two close, the night moves over to Arcadia Street: Blue Room, open until 4am.',
+  blue: { from: 26, to: 28, dur: 17, title: 'Blue Room till 4',
+    text: 'When the Burnett Street places close, the night moves over to Arcadia Street: Blue Room, open until 4am.',
     run(k, t) {
       goingOut();
       if (k < 0.17) return stroll([W('ekhaya', 2.5, 2.4), W('ekhaya', 2.5, 4.3), W('ekhaya', -3, 4.3)], k / 0.17, t, 0);
       if (k < 0.37) return stroll([W('blue', 6, 4.3), W('blue', -0.7, 4.3), W('blue', -0.7, 1.3)], (k - 0.17) / 0.2, t, 1);
       return onTheFloor(clubs[2], t, ['🍺 last one', '⚡ Extreme']);
     } },
-
-  { date: 14, from: 28, to: 28.3, dur: 15, title: 'The 4am stop',
+  burger: { from: 28, to: 28.3, dur: 15, title: 'The 4am stop',
     text: 'On the way back, the McDonald\'s on Burnett Street: a mini burger, chips and six nuggets.',
     run(k, t) {
       goingOut();
@@ -944,12 +934,10 @@ const chapters = [
       gf.say = '🍔 mini burger · 🍟 chips · 6 nuggets';
       return orbit(camAt6('burger', [3.5, 3.2, 10.5, -0.2, 1.4, 3.4], 2), t, 0.3);
     } },
-
-  { date: 14, from: 28.3, to: 28.9, dur: 30, title: 'Uber home',
+  nightUber: { from: 28.3, to: 28.9, dur: 30, title: 'Uber home',
     text: 'Then the wait for a ride, and the empty roads back to the apartment.',
     run(k, t) { goingOut(); if (k < 0.31) hold(gf.item, 'bag'); return ride(k, t, NIGHT_HOME); } },
-
-  { date: 14, from: 11.5, to: 13.5, dur: 12, title: 'Sunday',
+  hungover: { from: 11.5, to: 13.5, dur: 12, title: 'The morning after',
     text: 'Hungover, and breakfast is long gone. Lunch is eggs.',
     run(k, t) {
       state.indoor = true;
@@ -957,44 +945,96 @@ const chapters = [
       put(me, 1.5, -2.42, PI, 'stir', t); put(gf, ...SOFA_GF, 'sit', t); gf.say = '🤕'; me.say = '🍳'; state.eggs = true;
       return orbit([4.0, 2.7, 1.0, 1.2, 1.15, -3, 1], t, 0.25);
     } },
+};
 
-  { date: (k) => 15 + Math.min(13, Math.floor(k * 14)), from: 9, to: 23, dur: 15, title: 'And the rest of the month',
-    text: 'It repeats until month end: eight office days in all, about twenty remote ones, wine and cards most evenings, and groove every weekend.',
-    run(k, t) {
-      if (k < 0.34) { put(me, ...DESK, 'type', t); gfHome(t); state.music = true; return indoors(orbit([-1.6, 2.8, 1.3, -4.4, 1.05, -1.5, 0], t, 0.2)); }
-      if (k < 0.67) { wear(me, 'work'); gfHome(t); put(me, ...W('office', 3.6, -2.0), 0, 'type', t); return orbit(camAt6('office', [1.5, 4.2, 7.5, -0.2, 1.1, -1.6], 1), t); }
-      goingOut(); return onTheFloor(clubs[0], t, ['🍺', '🍾']);
-    } },
-];
+// ---- The month. Every day of the current calendar month gets its own shots.
+// Tuesdays and Thursdays are office days (eight a month); Saturdays and Sundays end in groove.
+const TODAY = new Date(), YEAR = TODAY.getFullYear(), MONTH = TODAY.getMonth();
+const DAYS = new Date(YEAR, MONTH + 1, 0).getDate();
+const MONTH_NAME = TODAY.toLocaleString('en', { month: 'long' });
+const weekday = (d) => (new Date(YEAR, MONTH, d).getDay() + 6) % 7; // 0 = Monday … 6 = Sunday
+const OFFICE_DAYS = [];
+for (let d = 1; d <= DAYS && OFFICE_DAYS.length < 8; d++) if (weekday(d) === 1 || weekday(d) === 3) OFFICE_DAYS.push(d);
+
+const chapters = [];
+// A shot: scene `key` from k0 to k1, lasting `dur` seconds, on day `date`.
+function shot(date, key, k0 = 0, k1 = 1, dur, title, menu = -1) {
+  const s = SCENES[key];
+  chapters.push({ date, key, title: title || s.title, text: s.text, dur: dur || s.dur * (k1 - k0),
+    from: lerp(s.from, s.to, k0), to: lerp(s.from, s.to, k1),
+    run: (k, t) => { menuToday = menu; return s.run(k0 + (k1 - k0) * k, t); } });
+}
+{
+  const seen = {};
+  let evening = 0, morning = 0, home = 0, night = 0, remote = 0, lazy = 0;
+  // Short versions of each kind of moment, used in rotation once the full version has been shown.
+  const EVENINGS = [(d) => shot(d, 'wine', 0.5, 1, 8), (d) => shot(d, 'cook', 0, 1, 6, null, d % 4), (d) => shot(d, 'cards', 0.4, 1, 7)];
+  const MORNINGS = [(d) => shot(d, 'toWork', 0, 0.31, 11), (d) => shot(d, 'toWork', 0.38, 0.64, 9, 'Office day: the robot at Jan Shoba'), (d) => shot(d, 'toWork', 0.64, 0.83, 7, 'Office day: the ride in')];
+  const HOMES = [(d) => shot(d, 'toHome', 0.64, 0.83, 7), (d) => shot(d, 'toHome', 0, 0.31, 10, 'Waiting for the ride home'), (d) => shot(d, 'toHome', 0.38, 0.64, 9)];
+  const NIGHTS = [
+    (d) => { shot(d, 'ekhaya', 0.45, 0.69, 7); shot(d, 'ekhaya', 0.72, 1, 6, 'Ekhaya: the hubbly'); },
+    (d) => { shot(d, 'blue', 0.4, 1, 9); shot(d, 'burger', 0.5, 1, 6); },
+    (d) => { shot(d, 'drama', 0.72, 1, 8); shot(d, 'nightUber', 0.64, 0.83, 6); },
+    (d) => { shot(d, 'drama', 0.4, 0.69, 8); shot(d, 'nightUber', 0, 0.31, 9, 'Waiting for the Uber home'); },
+  ];
+  for (let d = 1; d <= DAYS; d++) {
+    const wd = weekday(d);
+    if (d === 1) shot(d, 'intro');
+    if (wd >= 5) {
+      // Weekend. Sunday (or any day after a night out) starts hungover.
+      if (wd === 6) { if (!seen.hungover) shot(d, 'hungover'); else if (lazy++ % 2) shot(d, 'hungover', 0, 0.38, 5); else shot(d, 'hungover', 0.42, 1, 6); seen.hungover = true; }
+      if (!seen.groove) { shot(d, 'drama'); shot(d, 'ekhaya'); shot(d, 'blue'); shot(d, 'burger'); shot(d, 'nightUber'); seen.groove = true; }
+      else NIGHTS[night++ % NIGHTS.length](d);
+    } else if (OFFICE_DAYS.includes(d)) {
+      const n = OFFICE_DAYS.indexOf(d) + 1;
+      if (!seen.office) { shot(d, 'toWork'); shot(d, 'office'); shot(d, 'toHome'); seen.office = true; }
+      else { MORNINGS[morning++ % 3](d); shot(d, 'office', n % 2 ? 0 : 0.56, n % 2 ? 0.5 : 1, 6, `Office day ${n} of 8`); HOMES[home++ % 3](d); }
+      EVENINGS[evening++ % 3](d);
+    } else {
+      if (!seen.remote) { shot(d, 'desk'); shot(d, 'wine'); shot(d, 'cook'); shot(d, 'cards'); shot(d, 'sleep'); seen.remote = true; }
+      else {
+        if (remote++ % 2) shot(d, 'desk', 0.58, 1, 7); else shot(d, 'desk', 0.05, 0.5, 7);
+        EVENINGS[evening++ % 3](d);
+        if (remote % 3 === 0) shot(d, 'sleep', 0, 1, 5);
+      }
+    }
+  }
+}
 
 /* ------------------------------------------------------------------ HUD + playback */
 
-const OFFICE_DAYS = [2, 4, 9, 11, 16, 18, 23, 25], DAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-$('#cal').innerHTML = Array.from({ length: 28 }, (_, i) => { const d = i + 1; return `<i class="${OFFICE_DAYS.includes(d) ? 'office' : i % 7 > 4 ? 'weekend' : ''}" title="Day ${d}"></i>`; }).join('');
-const calEls = [...$('#cal').children];
+const DAY_NAME = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+$('#month').textContent = `${MONTH_NAME} ${YEAR}`;
+$('#cal').innerHTML = DAY_NAME.map((n) => `<b>${n[0]}</b>`).join('') + '<u></u>'.repeat(weekday(1))
+  + Array.from({ length: DAYS }, (_, i) => `<i class="${OFFICE_DAYS.includes(i + 1) ? 'office' : weekday(i + 1) > 4 ? 'weekend' : ''}" title="${i + 1} ${MONTH_NAME}"></i>`).join('');
+const calEls = [...$('#cal').querySelectorAll('i')];
+// which shots belong to which day
+const dayShots = Array.from({ length: DAYS + 1 }, () => []);
+chapters.forEach((c, i) => dayShots[c.date].push(i));
+$('#dots').innerHTML = Array.from({ length: DAYS }, (_, i) => `<button data-day="${i + 1}" title="${DAY_NAME[weekday(i + 1)]} ${i + 1} ${MONTH_NAME}"><i></i></button>`).join('');
+const dotEls = [...$('#dots').children];
 let shownDate = 0;
 function showDate(d) {
   if (d === shownDate) return;
   shownDate = d;
   calEls.forEach((el, i) => { el.classList.toggle('past', i + 1 < d); el.classList.toggle('now', i + 1 === d); });
-  $('#day').textContent = `Week ${Math.ceil(d / 7)} · ${DAY[(d - 1) % 7]}`;
+  dotEls.forEach((el, i) => { el.className = i + 1 < d ? 'done' : ''; if (i + 1 !== d) el.firstChild.style.width = '0'; });
+  $('#day').textContent = `${DAY_NAME[weekday(d)]} ${d} ${MONTH_NAME}`;
 }
 
-let idx = 0, chT = 0, playing = true;
-$('#dots').innerHTML = chapters.map((c, i) => `<button data-go="${i}" title="${c.title}"><i></i></button>`).join('');
-const dotEls = [...$('#dots').children];
+let idx = 0, chT = 0, playing = true, rate = 1;
 function go(i) {
   idx = (i + chapters.length) % chapters.length; chT = 0;
   const c = chapters[idx];
   $('#title').textContent = c.title; $('#text').textContent = c.text;
-  dotEls.forEach((d, j) => { d.className = j < idx ? 'done' : ''; d.firstChild.style.width = '0'; });
 }
 document.addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
-  if (b.dataset.go) go(+b.dataset.go);
+  if (b.dataset.day) go(dayShots[+b.dataset.day][0]);
   else if (b.id === 'prev') go(idx - 1);
   else if (b.id === 'next') go(idx + 1);
   else if (b.id === 'play') { playing = !playing; b.textContent = playing ? '⏸' : '▶'; }
+  else if (b.id === 'speed') { rate = rate === 1 ? 2 : rate === 2 ? 4 : 1; b.textContent = `${rate}×`; }
   else if (b.id === 'sound') { toggleSound(); b.classList.toggle('on', audioOn); }
 });
 addEventListener('keydown', (e) => { if (e.key === 'ArrowRight') go(idx + 1); if (e.key === 'ArrowLeft') go(idx - 1); if (e.key === ' ') $('#play').click(); });
@@ -1045,11 +1085,11 @@ const clock = new THREE.Clock();
 let lastCut = '';
 go(0);
 loadPeople().catch((err) => console.error('people failed to load', err));
-window.__life = { go, seek: (k) => { chT = k * chapters[idx].dur; }, me, gf, actors, THREE, TW }; // handy for jumping around while editing
+window.__life = { go, seek: (k) => { chT = k * chapters[idx].dur; }, me, gf, actors, THREE, TW, chapters }; // handy for jumping around while editing
 
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1), t = clock.elapsedTime;
-  if (playing) chT += dt;
+  if (playing) chT += dt * rate;
   const ch = chapters[idx], k = clamp01(chT / ch.dur);
 
   // Defaults for this frame; the chapter then overrides what it needs.
@@ -1079,13 +1119,13 @@ renderer.setAnimationLoop(() => {
   for (const a of [me, gf]) { if (a.say !== a.said) { a.said = a.say; a.bubble.element.textContent = a.say; } a.bubble.userData.on = !!a.say; }
   potTag.userData.on = !!potTag.element.textContent;
   pot.visible = !state.eggs;
-  notes.on = state.music && idx < 6;
+  notes.on = state.music && state.indoor;
 
   // Calendar, clock, sky and light follow the date and time of day.
-  showDate(typeof ch.date === 'function' ? ch.date(k) : ch.date);
+  showDate(ch.date);
   const hour = lerp(ch.from, ch.to, k) % 24;
   $('#clock').textContent = `${String(Math.floor(hour)).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}`;
-  dotEls[idx].firstChild.style.width = `${k * 100}%`;
+  { const list = dayShots[ch.date]; dotEls[ch.date - 1].firstChild.style.width = `${((list.indexOf(idx) + k) / list.length) * 100}%`; }
   const dayAmt = clamp01((hour - 5.5) / 1.5) * clamp01((19.5 - hour) / 1.5);
   const duskAmt = Math.max(0, 1 - Math.abs(hour - 18.6) / 1.4, 1 - Math.abs(hour - 6.2) / 1.0);
   sky.copy(SKY.night).lerp(SKY.day, dayAmt).lerp(SKY.dusk, duskAmt * 0.55);
