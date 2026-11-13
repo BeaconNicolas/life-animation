@@ -48,6 +48,7 @@
     .ctl:hover { background: rgba(255, 255, 255, .14); }
     .ctl.wide { width: auto; padding: 0 12px; font-size: .76rem; gap: 6px; display: flex; }
     .ctl.on { background: var(--amber); color: #1a1026; border-color: var(--amber); }
+    .fps { font: 500 .68rem Inter, sans-serif; color: var(--dim); min-width: 3.2em; font-variant-numeric: tabular-nums; }
 
     /* labels living in the 3D world */
     .sign { font: 800 1rem Sora, sans-serif; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; color: #fff; text-shadow: 0 0 8px currentColor, 0 0 22px currentColor, 0 0 40px currentColor; }
@@ -94,6 +95,7 @@
       <button class="ctl" id="next" aria-label="Next scene">⏭</button>
       <button class="ctl wide" id="speed" aria-label="Playback speed">1×</button>
       <button class="ctl wide on" id="hd" aria-label="High definition on or off">HD</button>
+      <span class="fps" id="fps"></span>
       <div class="dots" id="dots"></div>
       <button class="ctl wide" id="sound" aria-label="Toggle music">♪ <span>Groove</span></button>
     </div>

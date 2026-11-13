@@ -39,6 +39,23 @@ const HD = { on: true };
 const hdRatio = () => (HD.on ? Math.min(Math.max(devicePixelRatio, 1.5), 2) : 1);
 renderer.setPixelRatio(hdRatio());
 const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
+renderer.info.autoReset = false; // counted per frame in the loop
+// Frame-rate guard: if the machine cannot hold ~60 fps, render fewer pixels until it can.
+const perf = { acc: 0, frames: 0, scale: 1, lastDrop: -1e9, fps: 60, before: 0, locked: false };
+let applyRatio = () => {};
+function guard(rawDt, now) {
+  if (rawDt > 0.25) return; // tab was in the background
+  perf.acc += rawDt; perf.frames++;
+  if (perf.acc < 1) return;
+  perf.fps = perf.frames / perf.acc; perf.acc = 0; perf.frames = 0;
+  $('#fps').textContent = `${Math.round(perf.fps)} fps`;
+  if (perf.locked) return;
+  // If the last drop in resolution did not help, the limit is not the graphics card (for example a 30 Hz screen): undo it and stop.
+  if (perf.before && perf.fps < perf.before * 1.08) { perf.scale = Math.min(1, perf.scale + 0.15); perf.locked = true; perf.before = 0; applyRatio(); return; }
+  perf.before = 0;
+  if (perf.fps < 54 && perf.scale > 0.5) { perf.before = perf.fps; perf.scale = Math.max(0.5, perf.scale - 0.15); perf.lastDrop = now; applyRatio(); }
+  else if (perf.fps > 58.5 && perf.scale < 1 && now - perf.lastDrop > 15) { perf.scale = Math.min(1, perf.scale + 0.1); applyRatio(); }
+}
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.shadowMap.enabled = true;
@@ -56,7 +73,8 @@ scene.fog = new THREE.Fog(0x8fc7ff, 45, 150);
 const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 400);
 
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 }));
-composer.setPixelRatio(hdRatio()); composer.setSize(innerWidth, innerHeight);
+applyRatio = () => { const r = hdRatio() * perf.scale; renderer.setPixelRatio(r); composer.setPixelRatio(r); composer.setSize(innerWidth, innerHeight); };
+applyRatio();
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.4, 0.6, 0.85);
 composer.addPass(bloom);
@@ -167,10 +185,11 @@ function person({ model = 'man', h = 1.75, tint = null, looks = null }) {
   const g = new THREE.Group(), inner = new THREE.Group();
   g.add(inner); scene.add(g);
   const mk = () => { const m = new THREE.Mesh(itemGeo, M(0xffffff, { roughness: 0.3 })); m.visible = false; m.castShadow = true; return m; };
+  const extra = !looks;
   looks = looks || { default: { body: model } };
   const fan = new THREE.Group(); fan.visible = false;
   for (let i = 0; i < 4; i++) { const c = new THREE.Mesh(cardGeo, i % 2 ? cardWhite : cardRed); c.position.set(0, 4, (i - 1.5) * 2.2); c.rotation.x = (i - 1.5) * 0.22; fan.add(c); }
-  const a = { g, inner, h, tint, looks, rigs: {}, look: null, wantLook: Object.keys(looks)[0], item: mk(), itemL: mk(), fan, eyeMat: { color: { setHex() {} } }, ph: (phase += 1.7), say: '', said: null, want: 'idle', lying: false, cur: null, last: new THREE.Vector3() };
+  const a = { g, inner, h, tint, looks, extra, rigs: {}, look: null, wantLook: Object.keys(looks)[0], item: mk(), itemL: mk(), fan, eyeMat: { color: { setHex() {} } }, ph: (phase += 1.7), say: '', said: null, want: 'idle', lying: false, cur: null, last: new THREE.Vector3() };
   a.bubble = tag(g, '', 'say', 0, h + 0.5, 0, 40); a.bubble.userData.on = false;
   actors.push(a);
   if (library.ready) dress(a);
@@ -279,7 +298,9 @@ function animatePeople(dt, camPos) {
     play(a, a.want);
     a.inner.rotation.x = a.lying ? -PI / 2 : 0;
     a.inner.position.y = a.lying ? 0.72 : 0.055; // shoes sit a few centimetres below the ankle bones' rest height
-    if (a.g.visible && a.g.position.distanceToSquared(camPos) < 3600) {
+    const near = a.g.position.distanceToSquared(camPos) < 6400;
+    if (a.extra) rig.obj.visible = near; // crowd, colleagues and DJs are only drawn within 80 m
+    if (a.g.visible && near) {
       if (a.cur === 'walk') {
         const speed = a.g.position.distanceTo(a.last) / Math.max(dt, 1e-3);
         a.actions.walk.timeScale = THREE.MathUtils.clamp(speed / 1.25, 0.7, 1.9);
@@ -396,25 +417,48 @@ box(scene, 2400, 0.2, 2000, 0x6f9463, -80, -0.1, 20).castShadow = false;
 const asphalt = M(0x2d2d36, { roughness: 0.95 }), paving = M(0xc4bcae), paint = lit(0xdedede);
 const dashX = new THREE.BoxGeometry(1.6, 0.01, 0.14), dashZ = new THREE.BoxGeometry(0.14, 0.01, 1.6);
 const poleGeo = new THREE.CylinderGeometry(0.06, 0.06, 3.6, 8), bulbGeo = new THREE.SphereGeometry(0.17, 10, 8), poleMat = M(0x3a3a44), bulbMat = lit(0xffe2a8);
+// Scenery that repeats hundreds of times (road dashes, lamps, trees, towers) is drawn as a few
+// instanced batches per zone instead of one object each, which is most of what keeps this at 60 fps.
+const zoneOf = (x, z) => { const i = ZONES.findIndex(([x1, x2, z1, z2]) => x > x1 - 45 && x < x2 + 45 && z > z1 - 45 && z < z2 + 45); return i < 0 ? 0 : i; };
+const batches = [], outdoor = [];
+function batch(geo, material, shadow = true) {
+  const lists = ZONES.map(() => []);
+  const b = {
+    add(x, y, z, sx = 1, sy = sx, sz = sx) { lists[zoneOf(x, z)].push(x, y, z, sx, sy, sz); },
+    build() {
+      const d = new THREE.Object3D();
+      for (const list of lists) {
+        if (!list.length) continue;
+        const m = new THREE.InstancedMesh(geo, asMat(material), list.length / 6);
+        for (let i = 0; i < list.length; i += 6) { d.position.set(list[i], list[i + 1], list[i + 2]); d.scale.set(list[i + 3], list[i + 4], list[i + 5]); d.updateMatrix(); m.setMatrixAt(i / 6, d.matrix); }
+        m.castShadow = m.receiveShadow = shadow && !m.material.isMeshBasicMaterial;
+        scene.add(m); outdoor.push(m);
+      }
+    },
+  };
+  batches.push(b); return b;
+}
+const bDashX = batch(dashX, paint, false), bDashZ = batch(dashZ, paint, false), bPole = batch(poleGeo, poleMat), bBulb = batch(bulbGeo, bulbMat);
 for (const [z, x1, x2, name] of EW) {
   box(scene, x2 - x1, 0.04, ROADW, asphalt, (x1 + x2) / 2, 0.02, z).castShadow = false;
   box(scene, x2 - x1, 0.05, 1.6, paving, (x1 + x2) / 2, 0.02, z - ROADW / 2 - 0.8).castShadow = false;
-  for (let x = x1 + 2; x < x2; x += 4) if (inZone(x, z)) mesh(scene, dashX, paint, x, 0.045, z);
-  for (let x = x1 + 5; x < x2; x += 18) if (inZone(x, z) && !nearSet(x, z - 7.4, 2)) { mesh(scene, poleGeo, poleMat, x, 1.8, z - ROADW / 2 - 1.5); mesh(scene, bulbGeo, bulbMat, x, 3.7, z - ROADW / 2 - 1.5); }
+  for (let x = x1 + 2; x < x2; x += 4) if (inZone(x, z)) bDashX.add(x, 0.045, z);
+  for (let x = x1 + 5; x < x2; x += 18) if (inZone(x, z) && !nearSet(x, z - 7.4, 2)) { bPole.add(x, 1.8, z - ROADW / 2 - 1.5); bBulb.add(x, 3.7, z - ROADW / 2 - 1.5); }
   if (name) for (let x = x1 + 40; x < x2; x += 110) if (inZone(x, z)) tag(scene, name, 'street', x, 3.2, z + ROADW / 2 + 1.2, 42);
 }
 for (const [x, z1, z2, name] of NS) {
   box(scene, ROADW, 0.04, z2 - z1, asphalt, x, 0.021, (z1 + z2) / 2).castShadow = false;
-  for (let z = z1 + 4; z < z2 - 2; z += 4) if (inZone(x, z)) mesh(scene, dashZ, paint, x, 0.046, z);
+  for (let z = z1 + 4; z < z2 - 2; z += 4) if (inZone(x, z)) bDashZ.add(x, 0.046, z);
   if (name) for (let z = z1 + 60; z < z2; z += 120) if (inZone(x, z)) tag(scene, name, 'street', x + ROADW / 2 + 1.2, 3.2, z, 42);
 }
 
 const trunkGeo = new THREE.CylinderGeometry(0.13, 0.2, 2.6, 8), trunkMat = M(0x4a3324);
 const BLOBS = [[0, 3.4, 0, 1.5, 0x9b6bd6], [0.95, 3.0, 0.3, 1.05, 0xa77be0], [-0.85, 3.2, -0.3, 1.1, 0x8f5fcb]]
-  .map(([dx, dy, dz, r, c]) => ({ dx, dy, dz, geo: new THREE.IcosahedronGeometry(r, 2), mat: M(c, { roughness: 1 }) }));
+  .map(([dx, dy, dz, r, c]) => ({ dx, dy, dz, b: batch(new THREE.IcosahedronGeometry(r, 2), M(c, { roughness: 1 })) }));
+const bTrunk = batch(trunkGeo, trunkMat);
 function jacaranda(x, z, s = 1) {
-  mesh(scene, trunkGeo, trunkMat, x, 1.3 * s, z).scale.setScalar(s);
-  for (const b of BLOBS) mesh(scene, b.geo, b.mat, x + b.dx * s, b.dy * s, z + b.dz * s).scale.setScalar(s);
+  bTrunk.add(x, 1.3 * s, z, s);
+  for (const b of BLOBS) b.b.add(x + b.dx * s, b.dy * s, z + b.dz * s, s);
 }
 const nearCross = (x) => NS.some(([nx]) => Math.abs(nx - x) < 6);
 for (const [z, x1, x2] of EW) for (let x = x1 + 3; x < x2; x += 11) {
@@ -430,7 +474,7 @@ const winCanvas = document.createElement('canvas'); winCanvas.width = 256; winCa
   for (let y = 6; y < 128; y += 14) for (let x = 5; x < 64; x += 12) { g.fillStyle = Math.random() < 0.55 ? '#ffd98a' : '#16161c'; g.fillRect(x, y, 7, 8); } }
 const winTex = new THREE.CanvasTexture(winCanvas); winTex.anisotropy = MAX_ANISO;
 const towerMats = [0x8d8799, 0xa0969f, 0xb3a79a, 0x77839a, 0x9c8f8f, 0xa9765b, 0x8a5a44].map((c) => M(c, { emissive: 0xffffff, emissiveMap: winTex, emissiveIntensity: 0 }));
-const towerGeo = new THREE.BoxGeometry(1, 1, 1);
+const towerGeo = new THREE.BoxGeometry(1, 1, 1), bTowers = towerMats.map((m) => batch(towerGeo, m));
 function clear(x, z, w) {
   for (const [rz, x1, x2] of EW) if (x > x1 - 10 && x < x2 + 10 && z > rz - 6 - w / 2 && z < rz + 23 + w / 2) return false;
   for (const [rx, z1, z2] of NS) if (z > z1 - 8 && z < z2 + 24 && Math.abs(x - rx) < (rx === MAIN_X ? 16 : 7) + w / 2) return false;
@@ -442,9 +486,10 @@ for (const [x1, x2, z1, z2] of ZONES) {
     const w = 6 + Math.random() * 6, h = 7 + Math.random() * 20, x = x1 - 40 + Math.random() * (x2 - x1 + 80), z = z1 - 40 + Math.random() * (z2 - z1 + 80);
     if (!clear(x, z, w)) continue;
     made++;
-    mesh(scene, towerGeo, pick(towerMats, i), x, h / 2, z).scale.set(w, h, w);
+    pick(bTowers, i).add(x, h / 2, z, w, h, w);
   }
 }
+batches.forEach((b) => b.build());
 const stars = (() => {
   const n = 500, pos = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) { const r = 190, a = Math.random() * PI * 2, b = 0.15 + Math.random() * 1.2; pos.set([r * Math.cos(a) * Math.cos(b), r * Math.sin(b), r * Math.sin(a) * Math.cos(b)], i * 3); }
@@ -723,7 +768,7 @@ function updateTraffic(dt, t, lateNight, reserved, jumped) {
   }
   for (const c of traffic) {
     const L = c.L, hidden = reserved.includes(c.key) || (lateNight && c.sparse);
-    c.mesh.visible = !hidden;
+    c.active = !hidden; c.mesh.visible = false;
     if (hidden) { c.s = (c.s + c.vmax * dt) % L.len; continue; }
     const p = L.a + L.dir * c.s;
     let gap = Infinity;
@@ -734,7 +779,7 @@ function updateTraffic(dt, t, lateNight, reserved, jumped) {
       if (d > -0.6 && d < gap && signal(J, L.axis, t) !== 'g') gap = d;
     }
     for (const o of traffic) {
-      if (o === c || o.key !== c.key || !o.mesh.visible) continue;
+      if (o === c || o.key !== c.key || !o.active) continue;
       const d = ((o.s - c.s + L.len) % L.len) - 5;
       if (d < gap) gap = d;
     }
@@ -749,6 +794,7 @@ function updateTraffic(dt, t, lateNight, reserved, jumped) {
     const q = L.a + L.dir * c.s;
     if (L.axis === 'x') { c.mesh.position.set(q, 0, L.c); c.mesh.rotation.y = L.dir > 0 ? 0 : PI; }
     else { c.mesh.position.set(L.c, 0, q); c.mesh.rotation.y = L.dir > 0 ? -PI / 2 : PI / 2; }
+    c.mesh.visible = !state.indoor && c.mesh.position.distanceToSquared(camPos) < 25600; // only draw cars within 160 m, and never from indoors
   }
 }
 
@@ -1045,7 +1091,7 @@ document.addEventListener('click', (e) => {
   else if (b.id === 'play') { playing = !playing; b.textContent = playing ? '⏸' : '▶'; }
   else if (b.id === 'hd') {
     HD.on = !HD.on; b.classList.toggle('on', HD.on);
-    renderer.setPixelRatio(hdRatio()); composer.setPixelRatio(hdRatio()); composer.setSize(innerWidth, innerHeight);
+    perf.scale = 1; perf.locked = false; perf.before = 0; applyRatio();
     sun.shadow.mapSize.setScalar(HD.on ? 4096 : 2048); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
   }
   else if (b.id === 'speed') { rate = rate === 1 ? 2 : rate === 2 ? 4 : 1; b.textContent = `${rate}×`; }
@@ -1099,10 +1145,12 @@ const clock = new THREE.Clock();
 let lastCut = '';
 go(0);
 loadPeople().catch((err) => console.error('people failed to load', err));
-window.__life = { go, seek: (k) => { chT = k * chapters[idx].dur; }, me, gf, actors, THREE, TW, chapters }; // handy for jumping around while editing
+window.__life = { go, seek: (k) => { chT = k * chapters[idx].dur; }, me, gf, actors, THREE, TW, chapters, renderer }; // handy for jumping around while editing
 
 renderer.setAnimationLoop(() => {
-  const dt = Math.min(clock.getDelta(), 0.1), t = clock.elapsedTime;
+  renderer.info.reset();
+  const rawDt = clock.getDelta(), dt = Math.min(rawDt, 0.1), t = clock.elapsedTime;
+  guard(rawDt, t);
   if (playing) chT += dt * rate;
   const ch = chapters[idx], k = clamp01(chT / ch.dur);
 
@@ -1155,6 +1203,7 @@ renderer.setAnimationLoop(() => {
   officeLight.intensity = lerp(18, 5, dayAmt);
   carLight.intensity = car.visible ? night * 9 : 0;
 
+  if (state.indoor === outdoor[0].visible) for (const m of outdoor) m.visible = !state.indoor; // nothing outside is visible from inside the studio
   updateTraffic(dt, t, hour > 0.5 && hour < 5.5, state.reserved, jumped);
 
   // Music makes the screens, soundbar and clubs move.
