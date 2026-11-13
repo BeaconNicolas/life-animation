@@ -34,7 +34,11 @@ try { renderer = new THREE.WebGLRenderer({ antialias: true }); } catch {
   stage.innerHTML = '<div class="fallback">This animation needs WebGL, which is not available in this browser.</div>';
   throw new Error('WebGL unavailable');
 }
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+// HD: render at 1.5–2× the screen's pixels with 4× multisampling; the HD button drops this for slower machines.
+const HD = { on: true };
+const hdRatio = () => (HD.on ? Math.min(Math.max(devicePixelRatio, 1.5), 2) : 1);
+renderer.setPixelRatio(hdRatio());
+const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.shadowMap.enabled = true;
@@ -51,7 +55,8 @@ scene.background = new THREE.Color(0x8fc7ff);
 scene.fog = new THREE.Fog(0x8fc7ff, 45, 150);
 const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 400);
 
-const composer = new EffectComposer(renderer);
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 }));
+composer.setPixelRatio(hdRatio()); composer.setSize(innerWidth, innerHeight);
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.4, 0.6, 0.85);
 composer.addPass(bloom);
@@ -68,7 +73,7 @@ addEventListener('resize', () => {
 const hemi = new THREE.HemisphereLight(0xffffff, 0x8a7f72, 1.4);
 const sun = new THREE.DirectionalLight(0xfff0d8, 2.6);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(4096, 4096);
 Object.assign(sun.shadow.camera, { left: -26, right: 26, top: 26, bottom: -26, near: 1, far: 110 });
 sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.03;
 const fill = new THREE.PointLight(0xfff1e0, 10, 18);
@@ -198,7 +203,7 @@ function recolored(bodyKey, how, map) {
   for (let i = 0; i < d.length; i += 4) { const out = fn(d[i], d[i + 1], d[i + 2]); if (out) { d[i] = out[0]; d[i + 1] = out[1]; d[i + 2] = out[2]; } }
   ctx.putImageData(px, 0, 0);
   const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace; t.flipY = map.flipY;
+  t.colorSpace = THREE.SRGBColorSpace; t.flipY = map.flipY; t.anisotropy = MAX_ANISO;
   return (library.recolored[id] = t);
 }
 
@@ -301,7 +306,7 @@ async function loadClips(sex) {
 }
 async function loadPeople() {
   const fbx = new FBXLoader(), tl = new THREE.TextureLoader();
-  const tex = async (n) => { const t = await tl.loadAsync('/assets/' + n); t.colorSpace = THREE.SRGBColorSpace; return t; };
+  const tex = async (n) => { const t = await tl.loadAsync('/assets/' + n); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = MAX_ANISO; return t; };
   await Promise.all([
     ...Object.entries(AVATARS).map(async ([key, s]) => {
       const obj = await fbx.loadAsync(`/assets/${s.file}.fbx`);
@@ -420,10 +425,10 @@ for (const [z, x1, x2] of EW) for (let x = x1 + 3; x < x2; x += 11) {
 for (let z = -240; z < 720; z += 14) if (!EW.some(([ez]) => Math.abs(ez - z) < 12)) { jacaranda(MAIN_X - 20, z + Math.sin(z) * 0.8); jacaranda(MAIN_X + 20, z + 6 + Math.cos(z) * 0.8); }
 
 // Background buildings with lit windows, kept clear of streets, sets and camera paths.
-const winCanvas = document.createElement('canvas'); winCanvas.width = 64; winCanvas.height = 128;
-{ const g = winCanvas.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, 64, 128);
+const winCanvas = document.createElement('canvas'); winCanvas.width = 256; winCanvas.height = 512;
+{ const g = winCanvas.getContext('2d'); g.scale(4, 4); g.fillStyle = '#000'; g.fillRect(0, 0, 64, 128);
   for (let y = 6; y < 128; y += 14) for (let x = 5; x < 64; x += 12) { g.fillStyle = Math.random() < 0.55 ? '#ffd98a' : '#16161c'; g.fillRect(x, y, 7, 8); } }
-const winTex = new THREE.CanvasTexture(winCanvas);
+const winTex = new THREE.CanvasTexture(winCanvas); winTex.anisotropy = MAX_ANISO;
 const towerMats = [0x8d8799, 0xa0969f, 0xb3a79a, 0x77839a, 0x9c8f8f, 0xa9765b, 0x8a5a44].map((c) => M(c, { emissive: 0xffffff, emissiveMap: winTex, emissiveIntensity: 0 }));
 const towerGeo = new THREE.BoxGeometry(1, 1, 1);
 function clear(x, z, w) {
@@ -594,16 +599,20 @@ rbox(burger, 1.0, 0.7, 0.06, lit(0x7a6a3a), 1.9, 1.9, 3.31, 0.02);
 neon(burger, 'Burgers · 24h', '#ffd23f', 0, 4.0, 2.6, 34);
 
 /* ---- The apartment block: a closed brick building around the studio, with two more floors above. */
-const brickCanvas = document.createElement('canvas'); brickCanvas.width = 256; brickCanvas.height = 128;
-{ const g = brickCanvas.getContext('2d'); g.fillStyle = '#b9ab9b'; g.fillRect(0, 0, 256, 128);
+const brickCanvas = document.createElement('canvas'); brickCanvas.width = 1024; brickCanvas.height = 512;
+{ const g = brickCanvas.getContext('2d'); g.scale(4, 4); g.fillStyle = '#b9ab9b'; g.fillRect(0, 0, 256, 128);
   for (let row = 0; row < 8; row++) for (let i = -1; i < 8; i++) {
     const shade = 0.82 + Math.random() * 0.3;
     g.fillStyle = `rgb(${Math.round(156 * shade)}, ${Math.round(74 * shade)}, ${Math.round(52 * shade)})`;
-    g.fillRect(i * 32 + (row % 2 ? 16 : 0) + 1.5, row * 16 + 1.5, 29, 13);
+    const bx = i * 32 + (row % 2 ? 16 : 0) + 1.5, by = row * 16 + 1.5;
+    g.fillRect(bx, by, 29, 13);
+    g.fillStyle = 'rgba(255, 235, 215, 0.10)'; g.fillRect(bx, by, 29, 1.2);            // lit top edge
+    g.fillStyle = 'rgba(40, 15, 8, 0.22)'; g.fillRect(bx, by + 11.8, 29, 1.2);          // shaded bottom edge
+    for (let s = 0; s < 14; s++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '60,25,15' : '230,170,140'}, 0.13)`; g.fillRect(bx + Math.random() * 27, by + Math.random() * 11, 1 + Math.random() * 2, 0.6 + Math.random()); }
   } }
 function brick(w, h) {
   const t = new THREE.CanvasTexture(brickCanvas);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(w / 2, h); t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(w / 2, h); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = MAX_ANISO;
   return M(0xffffff, { map: t, roughness: 0.92 });
 }
 const quiet = (m) => { m.castShadow = false; return m; }; // keeps daylight coming into the studio
@@ -1034,6 +1043,11 @@ document.addEventListener('click', (e) => {
   else if (b.id === 'prev') go(idx - 1);
   else if (b.id === 'next') go(idx + 1);
   else if (b.id === 'play') { playing = !playing; b.textContent = playing ? '⏸' : '▶'; }
+  else if (b.id === 'hd') {
+    HD.on = !HD.on; b.classList.toggle('on', HD.on);
+    renderer.setPixelRatio(hdRatio()); composer.setPixelRatio(hdRatio()); composer.setSize(innerWidth, innerHeight);
+    sun.shadow.mapSize.setScalar(HD.on ? 4096 : 2048); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+  }
   else if (b.id === 'speed') { rate = rate === 1 ? 2 : rate === 2 ? 4 : 1; b.textContent = `${rate}×`; }
   else if (b.id === 'sound') { toggleSound(); b.classList.toggle('on', audioOn); }
 });
